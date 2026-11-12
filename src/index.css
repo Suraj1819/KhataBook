@@ -1,0 +1,191 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #ffffff;
+  --color-foreground: #0f172a;
+  --color-card: #ffffff;
+  --color-card-foreground: #0f172a;
+  --color-border: #e2e8f0;
+  --color-primary: #059669;
+  --color-primary-foreground: #ffffff;
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: #64748b;
+}
+
+@variant dark (&:where(.dark, .dark *));
+
+html.dark {
+  --color-background: #020617; /* slate-950 */
+  --color-foreground: #f8fafc; /* slate-50 */
+  --color-card: #0f172a;       /* slate-900 */
+  --color-card-foreground: #f8fafc;
+  --color-border: #1e293b;     /* slate-800 */
+  --color-muted: #1e293b;
+  --color-muted-foreground: #94a3b8;
+}
+
+/* Base */
+* {
+  border-color: var(--color-border);
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* =========================================
+   STRICT DARK MODE GLOBAL OVERRIDES
+   ========================================= */
+
+/* 1. Page Backgrounds & Footers */
+html.dark body,
+html.dark .bg-slate-50,
+html.dark .bg-slate-100,
+html.dark .bg-slate-50\/50,
+html.dark .bg-slate-50\/60,
+html.dark .bg-slate-50\/70,
+html.dark .bg-slate-50\/80,
+html.dark .bg-slate-100\/80,
+html.dark .bg-gray-50 {
+  background-color: #020617 !important;
+}
+
+/* 2. Cards & Modals */
+html.dark .bg-white,
+html.dark .bg-gray-100 {
+  background-color: #0f172a !important; /* slate-900 */
+}
+
+/* 3. 🔴 Table Headers, Rows & Footers */
+html.dark table thead,
+html.dark table thead tr,
+html.dark table thead th,
+html.dark table tbody tr,
+html.dark table th,
+html.dark table td {
+  background-color: #0f172a !important; /* Dark background for table */
+  color: #cbd5e1 !important; /* Light text */
+  border-color: #1e293b !important;
+}
+
+/* Table Hover Effect */
+html.dark table tbody tr:hover,
+html.dark .hover\:bg-slate-50:hover,
+html.dark .hover\:bg-slate-50\/70:hover,
+html.dark .hover\:bg-slate-50\/60:hover,
+html.dark .hover\:bg-slate-100:hover {
+  background-color: #1e293b !important; /* slate-800 */
+}
+
+/* 4. Colored Background Cards (Top Stats) */
+html.dark .bg-emerald-50,
+html.dark .bg-red-50,
+html.dark .bg-amber-50,
+html.dark .bg-blue-50,
+html.dark .bg-emerald-50\/60,
+html.dark .bg-red-50\/60 {
+  background-color: #0f172a !important; 
+  border-color: #1e293b !important;
+}
+
+/* Colored Icons */
+html.dark .bg-emerald-100,
+html.dark .bg-red-100,
+html.dark .bg-amber-100,
+html.dark .bg-blue-100 {
+  background-color: #1e293b !important;
+}
+
+/* 5. Text Colors */
+html.dark .text-slate-900,
+html.dark .text-slate-950,
+html.dark .text-slate-800,
+html.dark .text-gray-900 {
+  color: #f8fafc !important; /* slate-50 */
+}
+
+html.dark .text-slate-700,
+html.dark .text-slate-600,
+html.dark .text-slate-500,
+html.dark .text-gray-500 {
+  color: #94a3b8 !important; /* slate-400 */
+}
+
+/* 6. Borders & Dividers */
+html.dark .border-slate-200,
+html.dark .border-slate-100,
+html.dark .border-slate-300,
+html.dark .border-gray-200,
+html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #1e293b !important; /* slate-800 */
+}
+
+/* 7. Inputs, Dropdowns & Forms */
+html.dark input,
+html.dark textarea,
+html.dark select {
+  color: #f8fafc !important;
+  background-color: #0f172a !important;
+  border-color: #1e293b !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #64748b !important;
+}
+
+/* 8. Badges & Pills (Fix for Grey/White pills) */
+html.dark .bg-slate-100,
+html.dark .bg-slate-200,
+html.dark .bg-white.text-slate-600 {
+  background-color: #1e293b !important;
+  color: #e2e8f0 !important;
+  border-color: #334155 !important;
+}
+
+
+/* =========================================
+   9. FIX FOR DROPDOWNS & SELECT MENUS
+   ========================================= */
+
+/* Dropdown container (background) */
+html.dark [role="listbox"],
+html.dark [data-radix-popper-content-wrapper] > div,
+html.dark .bg-popover {
+  background-color: #0f172a !important; /* slate-900 */
+  border-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+
+/* Dropdown items (text color) */
+html.dark [role="option"],
+html.dark [role="menuitem"] {
+  color: #cbd5e1 !important; /* slate-300 */
+}
+
+/* Dropdown item HOVER / FOCUS state (White flash fix) */
+html.dark [role="option"]:hover,
+html.dark [role="option"]:focus,
+html.dark [role="menuitem"]:hover,
+html.dark [role="menuitem"]:focus,
+html.dark .focus\:bg-accent:focus,
+html.dark .focus\:bg-slate-100:focus,
+html.dark .focus\:bg-white:focus {
+  background-color: #1e293b !important; /* slate-800 */
+  color: #ffffff !important;
+}
+
+/* Selected item tick mark color */
+html.dark [role="option"][data-state="checked"] {
+  background-color: rgba(16, 185, 129, 0.1) !important;
+  color: #34d399 !important; /* emerald-400 */
+}
