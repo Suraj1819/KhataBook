@@ -1,10 +1,12 @@
+
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { Toaster } from "sonner"
-import { ThemeProvider } from "@/contexts/ThemeContext" // ⚠️ Naya import
+import { ThemeProvider } from "@/contexts/ThemeContext"
 import { AuthProvider, useAuth } from "@/contexts/AuthContext"
 import { ShopProvider } from "@/contexts/ShopContext"
 import { AppLayout } from "@/components/layout/AppLayout"
+import { AppToaster } from "@/components/ui/toaster"
+
 import Login from "@/pages/Login"
 import Register from "@/pages/Register"
 import Dashboard from "@/pages/Dashboard"
@@ -22,28 +24,48 @@ import KhataDetail from "@/pages/KhataDetail"
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { retry: 1, staleTime: 30000 },
+    queries: {
+      retry: 1,
+      staleTime: 30000,
+    },
   },
 })
 
 function PublicRoute({ children }) {
   const { user, loading } = useAuth()
+
   if (loading) return null
   if (user) return <Navigate to="/" replace />
+
   return children
 }
 
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      {/* ⚠️ ThemeProvider ko sabse upar wrap karein */}
       <ThemeProvider>
         <AuthProvider>
           <ShopProvider>
             <BrowserRouter>
               <Routes>
-                <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-                <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+                <Route
+                  path="/login"
+                  element={
+                    <PublicRoute>
+                      <Login />
+                    </PublicRoute>
+                  }
+                />
+
+                <Route
+                  path="/register"
+                  element={
+                    <PublicRoute>
+                      <Register />
+                    </PublicRoute>
+                  }
+                />
+
                 <Route element={<AppLayout />}>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/customers" element={<Customers />} />
@@ -58,10 +80,13 @@ export default function App() {
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/profile" element={<Profile />} />
                 </Route>
+
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </BrowserRouter>
-            <Toaster position="top-right" richColors closeButton />
+
+            {/* One global toaster for the entire application */}
+            <AppToaster />
           </ShopProvider>
         </AuthProvider>
       </ThemeProvider>

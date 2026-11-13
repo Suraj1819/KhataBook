@@ -1,191 +1,539 @@
+/* ================================================
+   KHAATAPRO — PREMIUM GLOBAL DESIGN SYSTEM
+   Typography: Inter Variable
+   Framework: Tailwind CSS v4
+   Dark mode: add the "dark" class on <html> (ThemeContext does this)
+================================================ */
+
+/* FONT IMPORT */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap");
+
 @import "tailwindcss";
 
+/* ================================================
+   01. DARK VARIANT
+   Makes every `dark:` class follow the <html class="dark"> toggle.
+================================================ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ================================================
+   02. DESIGN TOKENS (LIGHT)
+================================================ */
+
 @theme {
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
   --color-background: #ffffff;
-  --color-foreground: #0f172a;
+  --color-foreground: #171a36;
+
   --color-card: #ffffff;
-  --color-card-foreground: #0f172a;
-  --color-border: #e2e8f0;
+  --color-card-foreground: #171a36;
+
+  --color-popover: #ffffff;
+  --color-popover-foreground: #171a36;
+
+  --color-border: #e8e5f2;
+  --color-input: #e2e0ee;
+
   --color-primary: #059669;
   --color-primary-foreground: #ffffff;
-  --color-muted: #f1f5f9;
+
+  --color-muted: #f5f3fc;
   --color-muted-foreground: #64748b;
+
+  --color-secondary: #f1f5f9;
+  --color-secondary-foreground: #334155;
+
+  --color-accent: #f0fdf4;
+  --color-accent-foreground: #047857;
+
+  --color-destructive: #e11d48;
+  --color-destructive-foreground: #ffffff;
+  --color-ring: #059669;
 }
 
-@variant dark (&:where(.dark, .dark *));
+/* ================================================
+   03. DESIGN TOKENS (DARK)
+   Surfaces match the Tailwind slate scale used in Sidebar and Header:
+   page = slate-950, card = slate-900, line = slate-800.
+================================================ */
+
+html {
+  color-scheme: light;
+
+  --scroll-thumb: #cbd5e1;
+  --scroll-thumb-hover: #94a3b8;
+  --selection-bg: #d1fae5;
+  --selection-fg: #065f46;
+}
 
 html.dark {
-  --color-background: #020617; /* slate-950 */
-  --color-foreground: #f8fafc; /* slate-50 */
-  --color-card: #0f172a;       /* slate-900 */
-  --color-card-foreground: #f8fafc;
-  --color-border: #1e293b;     /* slate-800 */
+  color-scheme: dark; /* native scrollbars, date pickers, checkboxes */
+
+  --color-background: #020617;
+  --color-foreground: #f1f5f9;
+
+  --color-card: #0f172a;
+  --color-card-foreground: #f1f5f9;
+
+  --color-popover: #0f172a;
+  --color-popover-foreground: #f1f5f9;
+
+  --color-border: #1e293b;
+  --color-input: #334155;
+
+  --color-primary: #10b981;
+  --color-primary-foreground: #022c22;
+
   --color-muted: #1e293b;
   --color-muted-foreground: #94a3b8;
+
+  --color-secondary: #1e293b;
+  --color-secondary-foreground: #e2e8f0;
+
+  --color-accent: #064e3b;
+  --color-accent-foreground: #a7f3d0;
+
+  --color-destructive: #fb7185;
+  --color-destructive-foreground: #1c0a10;
+  --color-ring: #10b981;
+
+  --scroll-thumb: #334155;
+  --scroll-thumb-hover: #475569;
+  --selection-bg: rgba(16, 185, 129, 0.35);
+  --selection-fg: #ecfdf5;
+
+  /* Extra surfaces used by the fallback in section 09 */
+  --surface-page: #020617;
+  --surface-card: #0f172a;
+  --surface-inset: #0b1325;
+  --surface-muted: #1e293b;
+  --surface-strong: #273449;
+  --line: #1e293b;
+  --line-strong: #334155;
 }
 
-/* Base */
+/* ================================================
+   04. BASE (inside @layer base, so Tailwind utilities can override it)
+================================================ */
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    border-color: var(--color-border);
+  }
+
+  html {
+    min-height: 100%;
+    font-family: var(--font-sans);
+    font-optical-sizing: auto;
+    font-kerning: normal;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    min-height: 100vh;
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.5;
+    letter-spacing: -0.015em;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  /* Headings */
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-sans);
+    font-optical-sizing: auto;
+    color: inherit;
+    text-wrap: balance;
+  }
+
+  h1 {
+    font-weight: 750;
+    letter-spacing: -0.045em;
+    line-height: 1.2;
+  }
+
+  h2 {
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1.3;
+  }
+
+  h3 {
+    font-weight: 650;
+    letter-spacing: -0.025em;
+    line-height: 1.4;
+  }
+
+  h4,
+  h5,
+  h6 {
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  p {
+    line-height: 1.55;
+  }
+
+  /* Form elements */
+
+  button,
+  input,
+  textarea,
+  select {
+    font-family: inherit;
+    font-optical-sizing: auto;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #94a3b8;
+  }
+
+  /* Links */
+
+  a {
+    font-family: inherit;
+    text-decoration: none;
+  }
+
+  /* Tables */
+
+  table {
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
+  }
+
+  th {
+    font-weight: 600;
+  }
+
+  td {
+    font-weight: 450;
+  }
+
+  strong,
+  b {
+    font-weight: 650;
+  }
+
+  ::selection {
+    background: var(--selection-bg);
+    color: var(--selection-fg);
+  }
+
+  /* Keyboard focus. Utilities such as focus-visible:outline-none still win. */
+
+  :where(button, a, input, textarea, select, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+}
+
+/* ================================================
+   05. PROFESSIONAL NUMBERS & CURRENCY
+================================================ */
+
+.tabular-nums,
+.currency,
+.amount,
+[data-numeric="true"] {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ================================================
+   06. GLOBAL SCROLLBAR
+================================================ */
+
 * {
-  border-color: var(--color-border);
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
 }
 
-body {
-  margin: 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  background-color: var(--color-background);
-  color: var(--color-foreground);
-  -webkit-font-smoothing: antialiased;
+*::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
 }
 
-#root {
-  min-height: 100vh;
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-/* =========================================
-   STRICT DARK MODE GLOBAL OVERRIDES
-   ========================================= */
-
-/* 1. Page Backgrounds & Footers */
-html.dark body,
-html.dark .bg-slate-50,
-html.dark .bg-slate-100,
-html.dark .bg-slate-50\/50,
-html.dark .bg-slate-50\/60,
-html.dark .bg-slate-50\/70,
-html.dark .bg-slate-50\/80,
-html.dark .bg-slate-100\/80,
-html.dark .bg-gray-50 {
-  background-color: #020617 !important;
+*::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 20px;
 }
 
-/* 2. Cards & Modals */
-html.dark .bg-white,
-html.dark .bg-gray-100 {
-  background-color: #0f172a !important; /* slate-900 */
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
 }
 
-/* 3. 🔴 Table Headers, Rows & Footers */
-html.dark table thead,
-html.dark table thead tr,
-html.dark table thead th,
-html.dark table tbody tr,
-html.dark table th,
-html.dark table td {
-  background-color: #0f172a !important; /* Dark background for table */
-  color: #cbd5e1 !important; /* Light text */
-  border-color: #1e293b !important;
+/* ================================================
+   07. REDUCED MOTION
+================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
-/* Table Hover Effect */
-html.dark table tbody tr:hover,
-html.dark .hover\:bg-slate-50:hover,
-html.dark .hover\:bg-slate-50\/70:hover,
-html.dark .hover\:bg-slate-50\/60:hover,
-html.dark .hover\:bg-slate-100:hover {
-  background-color: #1e293b !important; /* slate-800 */
+/* ================================================
+   08. DARK MODE FALLBACK — HOW IT WORKS
+   Pages such as Dashboard and Profile use light-only classes
+   (bg-white, text-slate-800, border-[#eeecf5]...). The rules below remap
+   them in dark mode, so those pages work without editing every class.
+
+   Safety guard: every rule has :not([class*="dark:..."]).
+   If an element already has its own dark: class (Sidebar, Header,
+   AppLayout), the fallback skips it and your explicit dark: class wins.
+
+   These rules are intentionally outside any @layer, so they beat the
+   light utility classes without using !important.
+================================================ */
+
+/* ---------- 09. BACKGROUNDS ---------- */
+
+/* Page */
+html.dark :is(.bg-\[\#f7f5ff\], .bg-gray-50):not([class*="dark:bg-"]) {
+  background-color: var(--surface-page);
 }
 
-/* 4. Colored Background Cards (Top Stats) */
-html.dark .bg-emerald-50,
-html.dark .bg-red-50,
-html.dark .bg-amber-50,
-html.dark .bg-blue-50,
-html.dark .bg-emerald-50\/60,
-html.dark .bg-red-50\/60 {
-  background-color: #0f172a !important; 
-  border-color: #1e293b !important;
+/* Cards, popovers, buttons on white */
+html.dark :is(
+  .bg-white,
+  .bg-white\/60, .bg-white\/65, .bg-white\/70, .bg-white\/75,
+  .bg-white\/80, .bg-white\/85, .bg-white\/90, .bg-white\/95
+):not([class*="dark:bg-"]) {
+  background-color: var(--surface-card);
 }
 
-/* Colored Icons */
-html.dark .bg-emerald-100,
-html.dark .bg-red-100,
-html.dark .bg-amber-100,
-html.dark .bg-blue-100 {
-  background-color: #1e293b !important;
+/* Inset surfaces (inputs, soft panels) */
+html.dark :is(.bg-slate-50, .bg-slate-50\/50, .bg-slate-50\/60, .bg-slate-50\/70):not([class*="dark:bg-"]) {
+  background-color: var(--surface-inset);
 }
 
-/* 5. Text Colors */
-html.dark .text-slate-900,
-html.dark .text-slate-950,
-html.dark .text-slate-800,
-html.dark .text-gray-900 {
-  color: #f8fafc !important; /* slate-50 */
+/* Muted surfaces (table headers, pills, skeletons, tracks) */
+html.dark :is(
+  .bg-slate-100, .bg-slate-100\/80,
+  .bg-slate-200, .bg-slate-200\/70,
+  .bg-gray-100,
+  .bg-\[\#f5f3fc\]
+):not([class*="dark:bg-"]) {
+  background-color: var(--surface-muted);
 }
 
-html.dark .text-slate-700,
-html.dark .text-slate-600,
-html.dark .text-slate-500,
-html.dark .text-gray-500 {
-  color: #94a3b8 !important; /* slate-400 */
+/* Coloured tints, translucent so they sit well on dark cards */
+html.dark :is(.bg-emerald-50, .bg-emerald-50\/60, .bg-emerald-100, .bg-emerald-100\/60, .bg-emerald-100\/80, .bg-teal-100):not([class*="dark:bg-"]) {
+  background-color: rgba(16, 185, 129, 0.14);
 }
 
-/* 6. Borders & Dividers */
-html.dark .border-slate-200,
-html.dark .border-slate-100,
-html.dark .border-slate-300,
-html.dark .border-gray-200,
-html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
-html.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
-  border-color: #1e293b !important; /* slate-800 */
+html.dark :is(.bg-blue-50, .bg-blue-100, .bg-blue-100\/80, .bg-sky-50):not([class*="dark:bg-"]) {
+  background-color: rgba(59, 130, 246, 0.16);
 }
 
-/* 7. Inputs, Dropdowns & Forms */
-html.dark input,
-html.dark textarea,
-html.dark select {
-  color: #f8fafc !important;
-  background-color: #0f172a !important;
-  border-color: #1e293b !important;
+html.dark :is(.bg-violet-50, .bg-violet-100, .bg-violet-100\/80, .bg-purple-50, .bg-purple-100):not([class*="dark:bg-"]) {
+  background-color: rgba(139, 92, 246, 0.16);
+}
+
+html.dark :is(.bg-pink-50, .bg-pink-100, .bg-pink-100\/80):not([class*="dark:bg-"]) {
+  background-color: rgba(236, 72, 153, 0.15);
+}
+
+html.dark :is(.bg-rose-50, .bg-rose-50\/70, .bg-rose-100, .bg-red-50, .bg-red-100):not([class*="dark:bg-"]) {
+  background-color: rgba(244, 63, 94, 0.13);
+}
+
+html.dark :is(.bg-amber-50, .bg-amber-100, .bg-orange-100):not([class*="dark:bg-"]) {
+  background-color: rgba(245, 158, 11, 0.15);
+}
+
+/* Focus on inputs that turn white */
+html.dark .focus-visible\:bg-white:focus-visible:not([class*="dark:focus-visible:bg-"]) {
+  background-color: var(--surface-card);
+}
+
+/* ---------- 10. HOVER BACKGROUNDS ---------- */
+
+html.dark :is(
+  .hover\:bg-slate-50, .hover\:bg-slate-50\/70, .hover\:bg-slate-100,
+  .hover\:bg-\[\#f9f8ff\], .hover\:bg-\[\#faf9ff\]
+):hover:not([class*="dark:hover:bg-"]) {
+  background-color: var(--surface-muted);
+}
+
+html.dark :is(.hover\:bg-violet-50, .hover\:bg-violet-100):hover:not([class*="dark:hover:bg-"]) {
+  background-color: rgba(139, 92, 246, 0.24);
+}
+
+html.dark :is(.hover\:bg-emerald-50, .hover\:bg-emerald-100):hover:not([class*="dark:hover:bg-"]) {
+  background-color: rgba(16, 185, 129, 0.22);
+}
+
+html.dark :is(.hover\:bg-blue-100):hover:not([class*="dark:hover:bg-"]) {
+  background-color: rgba(59, 130, 246, 0.25);
+}
+
+html.dark :is(.hover\:bg-amber-100):hover:not([class*="dark:hover:bg-"]) {
+  background-color: rgba(245, 158, 11, 0.24);
+}
+
+html.dark :is(.hover\:bg-rose-50, .hover\:bg-red-50):hover:not([class*="dark:hover:bg-"]) {
+  background-color: rgba(244, 63, 94, 0.2);
+}
+
+/* ---------- 11. TEXT ---------- */
+
+/* Headings and primary text */
+html.dark :is(
+  .text-slate-950, .text-slate-900, .text-slate-800, .text-gray-900,
+  .text-\[\#151934\], .text-\[\#171a36\], .text-\[\#171a39\]
+):not([class*="dark:text-"]) {
+  color: #f1f5f9;
+}
+
+/* Body text */
+html.dark :is(.text-slate-700, .text-slate-600):not([class*="dark:text-"]) {
+  color: #cbd5e1;
+}
+
+/* Secondary text */
+html.dark :is(.text-slate-500, .text-gray-500):not([class*="dark:text-"]) {
+  color: #94a3b8;
+}
+
+/* Coloured text: lighter shades so contrast stays high on dark */
+html.dark :is(.text-emerald-600, .text-emerald-700, .text-emerald-800):not([class*="dark:text-"]) {
+  color: #34d399;
+}
+
+html.dark :is(.text-blue-600, .text-blue-700):not([class*="dark:text-"]) {
+  color: #60a5fa;
+}
+
+html.dark :is(.text-sky-600):not([class*="dark:text-"]) {
+  color: #38bdf8;
+}
+
+html.dark :is(.text-violet-600, .text-violet-700, .text-purple-700):not([class*="dark:text-"]) {
+  color: #a78bfa;
+}
+
+html.dark :is(.text-pink-600, .text-pink-700):not([class*="dark:text-"]) {
+  color: #f472b6;
+}
+
+html.dark :is(.text-rose-500, .text-rose-600, .text-rose-700, .text-red-600, .text-red-700):not([class*="dark:text-"]) {
+  color: #fb7185;
+}
+
+html.dark :is(.text-rose-600\/80):not([class*="dark:text-"]) {
+  color: rgba(251, 113, 133, 0.85);
+}
+
+html.dark :is(.text-amber-600, .text-amber-700, .text-orange-700):not([class*="dark:text-"]) {
+  color: #fbbf24;
+}
+
+/* Hover text */
+html.dark :is(.hover\:text-emerald-700, .hover\:text-emerald-800):hover:not([class*="dark:hover:text-"]) {
+  color: #6ee7b7;
+}
+
+html.dark :is(.hover\:text-slate-900, .hover\:text-slate-800):hover:not([class*="dark:hover:text-"]) {
+  color: #f8fafc;
+}
+
+/* ---------- 12. BORDERS & DIVIDERS ---------- */
+
+html.dark :is(
+  .border-white, .border-white\/80, .border-white\/90,
+  .border-slate-100, .border-slate-200, .border-gray-200,
+  .border-\[\#eae7f4\], .border-\[\#eeecf5\], .border-\[\#efedf6\], .border-\[\#ece9f5\],
+  .border-violet-100
+):not([class*="dark:border-"]) {
+  border-color: var(--line);
+}
+
+html.dark :is(.border-slate-300, .border-violet-200):not([class*="dark:border-"]) {
+  border-color: var(--line-strong);
+}
+
+html.dark :is(.border-emerald-100, .border-emerald-200):not([class*="dark:border-"]) {
+  border-color: rgba(16, 185, 129, 0.28);
+}
+
+html.dark :is(.border-rose-100, .border-rose-200, .border-red-200):not([class*="dark:border-"]) {
+  border-color: rgba(244, 63, 94, 0.3);
+}
+
+html.dark :is(.border-amber-200):not([class*="dark:border-"]) {
+  border-color: rgba(245, 158, 11, 0.32);
+}
+
+/* Dividers between list items */
+html.dark :is(.divide-slate-100, .divide-slate-200, .divide-\[\#eeecf5\]) > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--line);
+}
+
+html.dark .ring-slate-100 {
+  --tw-ring-color: var(--line);
+}
+
+/* ---------- 13. SHADOWS ---------- */
+
+/* Soft violet card shadows become a quiet dark shadow */
+html.dark [class*="shadow-[0_"] {
+  --tw-shadow: 0 6px 22px rgba(0, 0, 0, 0.38);
+}
+
+/* ---------- 14. FORMS ---------- */
+
+html.dark input:disabled,
+html.dark textarea:disabled,
+html.dark select:disabled {
+  opacity: 0.75;
 }
 
 html.dark input::placeholder,
 html.dark textarea::placeholder {
-  color: #64748b !important;
+  color: #64748b;
 }
 
-/* 8. Badges & Pills (Fix for Grey/White pills) */
-html.dark .bg-slate-100,
-html.dark .bg-slate-200,
-html.dark .bg-white.text-slate-600 {
-  background-color: #1e293b !important;
-  color: #e2e8f0 !important;
-  border-color: #334155 !important;
-}
-
-
-/* =========================================
-   9. FIX FOR DROPDOWNS & SELECT MENUS
-   ========================================= */
-
-/* Dropdown container (background) */
-html.dark [role="listbox"],
-html.dark [data-radix-popper-content-wrapper] > div,
-html.dark .bg-popover {
-  background-color: #0f172a !important; /* slate-900 */
-  border-color: #1e293b !important;
-  color: #f8fafc !important;
-}
-
-/* Dropdown items (text color) */
-html.dark [role="option"],
-html.dark [role="menuitem"] {
-  color: #cbd5e1 !important; /* slate-300 */
-}
-
-/* Dropdown item HOVER / FOCUS state (White flash fix) */
-html.dark [role="option"]:hover,
-html.dark [role="option"]:focus,
-html.dark [role="menuitem"]:hover,
-html.dark [role="menuitem"]:focus,
-html.dark .focus\:bg-accent:focus,
-html.dark .focus\:bg-slate-100:focus,
-html.dark .focus\:bg-white:focus {
-  background-color: #1e293b !important; /* slate-800 */
-  color: #ffffff !important;
-}
-
-/* Selected item tick mark color */
-html.dark [role="option"][data-state="checked"] {
-  background-color: rgba(16, 185, 129, 0.1) !important;
-  color: #34d399 !important; /* emerald-400 */
-}
+/* ================================================
+   END — KHAATAPRO GLOBAL STYLES
+================================================ */
