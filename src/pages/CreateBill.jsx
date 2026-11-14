@@ -39,6 +39,7 @@ import {
 import {
   ArrowDownLeft,
   CalendarDays,
+  Camera,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -47,6 +48,7 @@ import {
   Clock3,
   Copy,
   CreditCard,
+  Eye,
   FileText,
   IndianRupee,
   ImagePlus,
@@ -79,10 +81,10 @@ const DUE_SHORTCUTS = [
 
 const AVATAR_COLORS = [
   "bg-blue-100 text-blue-700",
-  "bg-amber-100 text-amber-700",
+  "bg-amber-100 text-amber-700 dark:text-amber-300",
   "bg-teal-100 text-teal-700",
   "bg-orange-100 text-orange-700",
-  "bg-violet-100 text-violet-700",
+  "bg-violet-100 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300",
 ]
 
 const emptyItem = () => ({
@@ -99,6 +101,32 @@ const emptyItem = () => ({
 const numberValue = (value) => {
   const number = Number(value)
   return Number.isFinite(number) ? number : 0
+}
+
+// Item discount accepts either a fixed rupee amount (e.g. 150) or a percentage (e.g. 30%).
+function getItemDiscountAmount(item) {
+  const raw = String(item.discount ?? "").trim()
+  if (!raw) return 0
+
+  if (raw.endsWith("%")) {
+    const percent = Number(raw.slice(0, -1).trim())
+    if (!Number.isFinite(percent)) return 0
+    const gross = Math.max(0, numberValue(item.quantity)) * Math.max(0, numberValue(item.rate))
+    return roundToTwo(gross * clamp(percent, 0, 100) / 100)
+  }
+
+  return Math.max(0, numberValue(raw))
+}
+
+function isValidItemDiscount(value) {
+  const raw = String(value ?? "").trim()
+  if (!raw) return true
+  if (raw.endsWith("%")) {
+    const percent = Number(raw.slice(0, -1).trim())
+    return Number.isFinite(percent) && percent >= 0 && percent <= 100
+  }
+  const amount = Number(raw)
+  return Number.isFinite(amount) && amount >= 0
 }
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max)
@@ -131,7 +159,7 @@ function CustomerAvatar({ name, photoUrl, className = "h-10 w-10" }) {
   return (
     <div
       aria-label={`${name || "Customer"} profile`}
-      className={`relative flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-violet-100 text-sm font-bold text-violet-700 ${className}`}
+      className={`relative flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-violet-100 dark:bg-violet-950/50 text-sm font-bold text-violet-700 dark:text-violet-300 ${className}`}
     >
       <span aria-hidden="true">{getInitials(name)}</span>
       {photoUrl && (
@@ -151,27 +179,27 @@ function CustomerAvatar({ name, photoUrl, className = "h-10 w-10" }) {
 }
 
 const fieldClass =
-  "h-11 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 shadow-sm shadow-slate-900/[0.02] transition-all placeholder:text-slate-400 hover:border-violet-200 focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/15 disabled:cursor-not-allowed disabled:bg-slate-50"
+  "h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 text-sm text-slate-800 dark:text-slate-200 shadow-sm shadow-slate-900/[0.02] transition-all placeholder:text-slate-400 hover:border-violet-200 dark:hover:border-slate-600 focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/15 disabled:cursor-not-allowed disabled:bg-slate-50 dark:disabled:bg-slate-800"
 
-const labelClass = "text-[13px] font-medium text-slate-700"
+const labelClass = "text-[13px] font-medium text-slate-700 dark:text-slate-200"
 
 const cardClass =
-  "overflow-hidden rounded-[20px] border border-white/80 bg-white/85 shadow-[0_5px_18px_rgba(80,65,130,0.07)] backdrop-blur-sm"
+  "overflow-hidden rounded-[20px] border border-white/80 dark:border-slate-700 bg-white/85 dark:bg-slate-900/85 shadow-[0_5px_18px_rgba(80,65,130,0.07)] backdrop-blur-sm"
 
 /* ==================================================
    SMALL UI PIECES
 ================================================== */
 
 const STAT_TONES = {
-  green: "bg-emerald-100/80 text-emerald-700",
+  green: "bg-emerald-100/80 text-emerald-700 dark:text-emerald-300",
   blue: "bg-blue-100/80 text-blue-700",
-  purple: "bg-violet-100/80 text-violet-700",
+  purple: "bg-violet-100/80 text-violet-700 dark:text-violet-300",
   pink: "bg-pink-100/80 text-pink-700",
 }
 
-function StatCard({ label, value, detail, icon: Icon, tone = "purple", valueClass = "text-[#171a36]" }) {
+function StatCard({ label, value, detail, icon: Icon, tone = "purple", valueClass = "text-[#171a36] dark:text-slate-100" }) {
   return (
-    <Card className="rounded-[18px] border border-white/80 bg-white/75 shadow-[0_3px_12px_rgba(80,65,130,0.06)]">
+    <Card className="rounded-[18px] border border-white/80 dark:border-slate-700 bg-white/75 dark:bg-slate-900/75 shadow-[0_3px_12px_rgba(80,65,130,0.06)]">
       <CardContent className="flex min-w-0 items-center gap-3 p-3.5 sm:p-4">
         <div
           className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${STAT_TONES[tone]}`}
@@ -180,11 +208,11 @@ function StatCard({ label, value, detail, icon: Icon, tone = "purple", valueClas
         </div>
 
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-medium text-slate-600">{label}</p>
+          <p className="truncate text-[13px] font-medium text-slate-600 dark:text-slate-300">{label}</p>
           <p className={`mt-0.5 break-words text-xl font-bold tracking-tight tabular-nums ${valueClass}`}>
             {value}
           </p>
-          {detail && <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500">{detail}</p>}
+          {detail && <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500 dark:text-slate-400">{detail}</p>}
         </div>
       </CardContent>
     </Card>
@@ -193,15 +221,15 @@ function StatCard({ label, value, detail, icon: Icon, tone = "purple", valueClas
 
 function SectionHeader({ icon: Icon, title, description, action }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-[#eae7f4] px-5 py-4">
+    <div className="flex items-center justify-between gap-3 border-b border-[#eae7f4] dark:border-slate-700 px-5 py-4">
       <div className="flex min-w-0 items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300">
           <Icon className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
         </div>
 
         <div className="min-w-0">
-          <h2 className="text-[16px] font-bold tracking-tight text-[#171a36]">{title}</h2>
-          {description && <p className="mt-0.5 text-xs text-slate-500">{description}</p>}
+          <h2 className="text-[16px] font-bold tracking-tight text-[#171a36] dark:text-slate-100">{title}</h2>
+          {description && <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{description}</p>}
         </div>
       </div>
 
@@ -224,7 +252,7 @@ function FormField({ label, children, className = "", hint }) {
     <div className={`min-w-0 space-y-1.5 ${className}`}>
       <Label className={labelClass}>{label}</Label>
       {children}
-      {hint && <p className="text-[11px] text-slate-500">{hint}</p>}
+      {hint && <p className="text-[11px] text-slate-500 dark:text-slate-400">{hint}</p>}
     </div>
   )
 }
@@ -232,10 +260,10 @@ function FormField({ label, children, className = "", hint }) {
 function SummaryRow({ label, value, emphasized = false, tone }) {
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
-      <span className={emphasized ? "font-semibold text-slate-800" : "text-slate-600"}>{label}</span>
+      <span className={emphasized ? "font-semibold text-slate-800 dark:text-slate-200" : "text-slate-600 dark:text-slate-300"}>{label}</span>
       <span
         className={`shrink-0 tabular-nums ${
-          emphasized ? "text-base font-bold text-slate-900" : "font-semibold text-slate-800"
+          emphasized ? "text-base font-bold text-slate-900 dark:text-slate-100" : "font-semibold text-slate-800 dark:text-slate-200"
         } ${tone || ""}`}
       >
         {value}
@@ -249,10 +277,10 @@ function ChipButton({ children, onClick, active = false }) {
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${
+      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 ${
         active
-          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-          : "border-violet-100 bg-white text-slate-600 hover:bg-violet-50"
+          ? "border-violet-200 dark:border-slate-700 bg-violet-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+          : "border-violet-100 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-slate-700"
       }`}
     >
       {children}
@@ -265,19 +293,19 @@ function ToggleOption({ checked, onChange, title, description }) {
     <label
       className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition-colors ${
         checked
-          ? "border-emerald-200 bg-emerald-50/60"
-          : "border-violet-100 bg-white hover:bg-violet-50/50"
+          ? "border-emerald-200 bg-emerald-50/60 dark:bg-emerald-950/40"
+          : "border-violet-100 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-violet-50/50 dark:hover:bg-slate-700"
       }`}
     >
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 accent-emerald-600"
+        className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 dark:border-slate-600 accent-emerald-600"
       />
       <span className="min-w-0">
-        <span className="block text-sm font-semibold text-slate-800">{title}</span>
-        <span className="mt-0.5 block text-xs leading-5 text-slate-500">{description}</span>
+        <span className="block text-sm font-semibold text-slate-800 dark:text-slate-200">{title}</span>
+        <span className="mt-0.5 block text-xs leading-5 text-slate-500 dark:text-slate-400">{description}</span>
       </span>
     </label>
   )
@@ -291,15 +319,15 @@ function ChecklistItem({ done, label }) {
         className={`h-4 w-4 shrink-0 ${done ? "text-emerald-600" : "text-slate-300"}`}
         aria-hidden="true"
       />
-      <span className={done ? "font-medium text-slate-700" : "text-slate-500"}>{label}</span>
+      <span className={done ? "font-medium text-slate-700 dark:text-slate-200" : "text-slate-500 dark:text-slate-400"}>{label}</span>
     </li>
   )
 }
 
 const STATUS_STYLES = {
-  paid: { label: "Paid", className: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: CheckCircle2 },
-  partial: { label: "Partially paid", className: "bg-amber-100 text-amber-700 border-amber-200", icon: Clock3 },
-  unpaid: { label: "Unpaid", className: "bg-rose-100 text-rose-700 border-rose-200", icon: CircleAlert },
+  paid: { label: "Paid", className: "bg-emerald-100 text-emerald-700 dark:text-emerald-300 border-emerald-200", icon: CheckCircle2 },
+  partial: { label: "Partially paid", className: "bg-amber-100 text-amber-700 dark:text-amber-300 border-amber-200", icon: Clock3 },
+  unpaid: { label: "Unpaid", className: "bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200", icon: CircleAlert },
 }
 
 function StatusBadge({ status }) {
@@ -356,6 +384,8 @@ export default function CreateBill() {
   })
 
   const [items, setItems] = useState([emptyItem()])
+  const itemNameRefs = useRef([])
+  const [discountMenuOpen, setDiscountMenuOpen] = useState(null)
 
   const [isInterstate, setIsInterstate] = useState(false)
   const [taxInclusive, setTaxInclusive] = useState(false)
@@ -377,8 +407,10 @@ export default function CreateBill() {
   // Offline bill upload
   const [offlineBillFile, setOfflineBillFile] = useState(null)
   const [offlineBillPreview, setOfflineBillPreview] = useState("")
+  const offlineBillCameraRef = useRef(null)
 
   const [saving, setSaving] = useState(false)
+  const [reviewOpen, setReviewOpen] = useState(false)
   const [loadingCustomers, setLoadingCustomers] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -745,7 +777,11 @@ export default function CreateBill() {
   }
 
   function addItem() {
-    setItems((previous) => [...previous, emptyItem()])
+    setItems((previous) => [emptyItem(), ...previous])
+    // Focus the new first row after React has committed the updated list.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => itemNameRefs.current[0]?.focus())
+    })
   }
 
   function duplicateItem(index) {
@@ -889,7 +925,7 @@ export default function CreateBill() {
 
       const quantity = Math.max(0, numberValue(item.quantity))
       const rate = Math.max(0, numberValue(item.rate))
-      const discount = Math.max(0, numberValue(item.discount))
+      const discount = getItemDiscountAmount(item)
 
       const calc = calculateItemAmounts({
         quantity: String(quantity),
@@ -1011,6 +1047,8 @@ export default function CreateBill() {
 
   const namedItemCount = items.filter((item) => item.item_name.trim()).length
   const settledAmount = roundToTwo(calculated.amountPaid + calculated.advanceUsed)
+  const paymentExceedsBill =
+    numberValue(amountPaid) + numberValue(advanceUsed) > calculated.grandTotal + 0.009
   const settledPercent =
     calculated.grandTotal > 0
       ? clamp(Math.round((settledAmount / calculated.grandTotal) * 100), 0, 100)
@@ -1039,7 +1077,7 @@ export default function CreateBill() {
   -------------------------------------------------- */
 
   async function handleSubmit(event) {
-    event.preventDefault()
+    event?.preventDefault?.()
 
     if (!customerId) {
       toast.error("Select a customer")
@@ -1075,7 +1113,7 @@ export default function CreateBill() {
       (item) =>
         numberValue(item.quantity) <= 0 ||
         numberValue(item.rate) < 0 ||
-        numberValue(item.discount) < 0 ||
+        !isValidItemDiscount(item.discount) ||
         (item.gst_percent === "custom" &&
           (numberValue(item.custom_gst_percent) < 0 ||
             numberValue(item.custom_gst_percent) > 100))
@@ -1096,11 +1134,22 @@ export default function CreateBill() {
       return
     }
 
+    if (paymentExceedsBill) {
+      toast.error("Received amount cannot be greater than the bill total")
+      return
+    }
+
     if (numberValue(roundOff) + calculated.taxable + calculated.totalGst < 0) {
       toast.error("Invalid round off amount")
       return
     }
 
+    setReviewOpen(true)
+  }
+
+  async function confirmCreateBill() {
+    if (saving) return
+    setReviewOpen(false)
     setSaving(true)
     let createdBillId = null
 
@@ -1264,13 +1313,13 @@ export default function CreateBill() {
 
   if (!currentShop) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center rounded-3xl border border-dashed border-violet-200 bg-white/80 p-8 text-center">
+      <div className="flex min-h-[400px] items-center justify-center rounded-3xl border border-dashed border-violet-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 p-8 text-center">
         <div className="max-w-sm">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300">
             <Receipt className="h-7 w-7" aria-hidden="true" />
           </div>
-          <h2 className="mt-4 text-lg font-bold text-slate-900">No workspace selected</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-500">
+          <h2 className="mt-4 text-lg font-bold text-slate-900 dark:text-slate-100">No workspace selected</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
             Select a workspace to create a bill.
           </p>
         </div>
@@ -1283,14 +1332,14 @@ export default function CreateBill() {
   -------------------------------------------------- */
 
   return (
-    <div className="min-h-full w-full space-y-4 rounded-2xl bg-[#f7f5ff] px-3 py-5 sm:px-5 lg:px-6">
+    <div className="create-bill-page min-h-full w-full space-y-4 rounded-2xl bg-[#f7f5ff] dark:bg-slate-950 px-3 py-5 sm:px-5 lg:px-6">
       {/* PAGE HEADER */}
 
       <header className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
         <div>
           <nav
             aria-label="Breadcrumb"
-            className="flex items-center gap-2 text-xs font-medium text-slate-500"
+            className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400"
           >
             <span>{currentShop.name || "Workspace"}</span>
             <ChevronRight className="h-3 w-3" aria-hidden="true" />
@@ -1305,23 +1354,23 @@ export default function CreateBill() {
             <span>Create bill</span>
           </nav>
 
-          <h1 className="mt-1 text-[29px] font-bold tracking-tight text-[#171a39] sm:text-[32px]">
+          <h1 className="mt-1 text-[29px] font-bold tracking-tight text-[#171a39] dark:text-slate-100 sm:text-[32px]">
             Create bill
           </h1>
 
-          <p className="mt-0.5 text-sm text-slate-600">
+          <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-300">
             Billing for{" "}
-            <strong className="font-semibold text-slate-800">
+            <strong className="font-semibold text-slate-800 dark:text-slate-200">
               {selectedCustomer?.name || "a customer"}
             </strong>{" "}
             on{" "}
-            <strong className="font-semibold text-slate-800">{formatDate(billDate)}</strong>.
+            <strong className="font-semibold text-slate-800 dark:text-slate-200">{formatDate(billDate)}</strong>.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex h-11 items-center gap-2 rounded-xl border border-violet-100 bg-white/90 px-3.5 text-sm font-medium text-slate-700 shadow-sm">
-            <CalendarDays className="h-4 w-4 text-emerald-700" aria-hidden="true" />
+          <div className="inline-flex h-11 items-center gap-2 rounded-xl border border-violet-100 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-3.5 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm">
+            <CalendarDays className="h-4 w-4 text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
             <span>Today, {formatDate(today)}</span>
           </div>
 
@@ -1332,7 +1381,7 @@ export default function CreateBill() {
             disabled={refreshing || loadingCustomers}
             aria-label={refreshing ? "Refreshing create bill data" : "Refresh create bill data"}
             title="Refresh"
-            className="gap-2 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+            className="gap-2 h-11 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
           >
             <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} aria-hidden="true" />
             <span className="text-sm font-medium">{refreshing ? "Refreshing..." : "Refresh"}</span>
@@ -1342,7 +1391,7 @@ export default function CreateBill() {
             type="button"
             variant="outline"
             onClick={() => navigate(-1)}
-            className="h-11 gap-2 rounded-xl border-violet-200 bg-white/90 px-4 text-slate-700 shadow-sm hover:bg-violet-50"
+            className="h-11 gap-2 rounded-xl border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
           >
             <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             Back
@@ -1387,11 +1436,95 @@ export default function CreateBill() {
           detail={dueDate ? `Due on ${formatDate(dueDate)}` : "No due date set"}
           icon={IndianRupee}
           tone="pink"
-          valueClass={calculated.amountDue > 0 ? "text-rose-600" : "text-[#171a36]"}
+          valueClass={calculated.amountDue > 0 ? "text-rose-600 dark:text-rose-300" : "text-[#171a36] dark:text-slate-100"}
         />
       </section>
 
-      <form onSubmit={handleSubmit}>
+      <form
+        onSubmit={handleSubmit}
+        onKeyDown={(event) => {
+          const target = event.target
+          if (!(target instanceof HTMLElement)) return
+
+          // Keep multiline editing and open dropdown navigation native.
+          if (target.tagName === "TEXTAREA") {
+            if (event.key === "Enter") return
+            if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return
+          }
+
+          const isArrowKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)
+          const isOpenDropdownOption = target.closest(
+            '[role="listbox"], [data-radix-popper-content-wrapper]'
+          )
+          const isOpenCombobox = target.getAttribute("role") === "combobox" &&
+            target.getAttribute("aria-expanded") === "true"
+
+          // While a dropdown is open, let Radix move through its options.
+          // Once an option is selected and the dropdown closes, arrow keys
+          // return to bill-field navigation.
+          if (isArrowKey && (isOpenDropdownOption || isOpenCombobox)) return
+
+          const fields = Array.from(
+            event.currentTarget.querySelectorAll(
+              'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), [role="combobox"]:not([aria-disabled="true"])'
+            )
+          ).filter((field) => field.getClientRects().length > 0)
+
+          const currentIndex = fields.indexOf(target)
+          if (currentIndex < 0) return
+
+          const focusField = (index) => {
+            const nextField = fields[index]
+            if (!nextField) return
+            event.preventDefault()
+            nextField.focus()
+            if (
+              nextField.tagName === "INPUT" &&
+              !["number", "date", "file", "checkbox", "radio"].includes(nextField.type)
+            ) {
+              nextField.select()
+            }
+          }
+
+          if (event.key === "Enter") {
+            // Enter moves to the next field; it never submits the bill.
+            if (target.tagName === "INPUT" || target.getAttribute("role") === "combobox") {
+              focusField(currentIndex + 1)
+            }
+            return
+          }
+
+          if (event.key === "ArrowDown") {
+            focusField(currentIndex + 1)
+            return
+          }
+
+          if (event.key === "ArrowUp") {
+            focusField(currentIndex - 1)
+            return
+          }
+
+          if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+            // In text inputs, preserve normal caret movement. Move between fields
+            // only when the caret is already at the relevant edge.
+            const isTextLike =
+              target.tagName === "INPUT" &&
+              ["text", "search", "tel", "url", "email"].includes(target.type)
+
+            if (isTextLike && typeof target.selectionStart === "number") {
+              const atStart = target.selectionStart === 0 && target.selectionEnd === 0
+              const atEnd =
+                target.selectionStart === target.value.length &&
+                target.selectionEnd === target.value.length
+
+              if (event.key === "ArrowLeft" && !atStart) return
+              if (event.key === "ArrowRight" && !atEnd) return
+            }
+
+            focusField(event.key === "ArrowLeft" ? currentIndex - 1 : currentIndex + 1)
+          }
+        }}
+      >
         <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_350px]">
           {/* LEFT COLUMN */}
 
@@ -1407,7 +1540,7 @@ export default function CreateBill() {
                 <Button
                   type="button"
                   onClick={openAddCustomerDialog}
-                  className="shrink-0 gap-2 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+                  className="shrink-0 gap-2 h-11 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
                 >
                   <Plus className="h-4 w-4" />
                   Add customer
@@ -1416,7 +1549,7 @@ export default function CreateBill() {
             >
               <div ref={customerBoxRef} className="relative z-30">
                 {selectedCustomer ? (
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-violet-100 bg-[#faf9ff] p-3.5">
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-violet-100 dark:border-slate-700 bg-[#faf9ff] dark:bg-slate-800/80 p-3.5">
                     <div className="flex min-w-0 items-center gap-3">
                       <CustomerAvatar
                         name={selectedCustomer.name}
@@ -1425,16 +1558,16 @@ export default function CreateBill() {
                       />
 
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-bold text-slate-900">
+                        <p className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">
                           {selectedCustomer.name}
                         </p>
-                        <p className="mt-0.5 truncate text-xs text-slate-500">
+                        <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
                           {[selectedCustomer.mobile, selectedCustomer.city, selectedCustomer.state]
                             .filter(Boolean)
                             .join(" · ") || "Customer selected"}
                         </p>
                         {(selectedCustomer.gstin || selectedCustomer.address || selectedCustomer.customer_type) && (
-                          <p className="mt-0.5 truncate text-xs text-slate-500">
+                          <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
                             {[
                               selectedCustomer.customer_type,
                               selectedCustomer.gstin ? `GSTIN: ${selectedCustomer.gstin}` : null,
@@ -1450,7 +1583,7 @@ export default function CreateBill() {
                       variant="outline"
                       size="sm"
                       aria-label="Change customer"
-                      className="shrink-0 gap-1.5 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+                      className="shrink-0 gap-1.5 h-11 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
                       onClick={() => {
                         setCustomerId("")
                         setCustomerSearch("")
@@ -1463,7 +1596,7 @@ export default function CreateBill() {
                 ) : (
                   <div className="relative">
                     <Search
-                      className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                      className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500"
                       aria-hidden="true"
                     />
                     <Input
@@ -1483,7 +1616,7 @@ export default function CreateBill() {
                         type="button"
                         onClick={() => setCustomerSearch("")}
                         aria-label="Clear search"
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 hover:text-slate-700"
                       >
                         <X className="h-4 w-4" />
                       </button>
@@ -1502,10 +1635,10 @@ export default function CreateBill() {
                             width: customerDropdownPosition.width,
                             maxHeight: customerDropdownPosition.maxHeight,
                           }}
-                          className="z-[9999] overflow-y-auto rounded-xl border border-violet-100 bg-white shadow-[0_12px_32px_rgba(80,65,130,0.18)]"
+                          className="z-[9999] overflow-y-auto rounded-xl border border-violet-100 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-[0_12px_32px_rgba(80,65,130,0.18)]"
                         >
                           {loadingCustomers ? (
-                            <div className="flex items-center justify-center gap-2 px-3 py-6 text-sm text-slate-500">
+                            <div className="flex items-center justify-center gap-2 px-3 py-6 text-sm text-slate-500 dark:text-slate-400">
                               <Loader2 className="h-4 w-4 animate-spin" />
                               Loading customers…
                             </div>
@@ -1519,7 +1652,7 @@ export default function CreateBill() {
                                   setCustomerSearch("")
                                   setCustomerDropdownOpen(false)
                                 }}
-                                className="flex w-full items-center justify-between gap-3 border-b border-[#eeecf5] px-4 py-3 text-left transition-colors last:border-0 hover:bg-[#f9f8ff]"
+                                className="flex w-full items-center justify-between gap-3 border-b border-[#eeecf5] dark:border-slate-700 px-4 py-3 text-left transition-colors last:border-0 hover:bg-[#f9f8ff] dark:hover:bg-slate-700"
                               >
                                 <div className="flex min-w-0 items-center gap-3">
                                   <CustomerAvatar
@@ -1530,34 +1663,34 @@ export default function CreateBill() {
                                     }`}
                                   />
                                   <div className="min-w-0">
-                                    <p className="truncate text-sm font-semibold text-slate-800">
+                                    <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-200">
                                       {customer.name}
                                     </p>
-                                    <p className="mt-0.5 truncate text-xs text-slate-500">
+                                    <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
                                       {[customer.mobile, customer.city].filter(Boolean).join(" · ") ||
                                         "No contact details"}
                                     </p>
                                   </div>
                                 </div>
-                                <span className="shrink-0 text-xs font-semibold text-emerald-700">
+                                <span className="shrink-0 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
                                   Select
                                 </span>
                               </button>
                             ))
                           ) : (
                             <div className="px-3 py-6 text-center">
-                              <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+                              <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300">
                                 <UserRound className="h-5 w-5" />
                               </div>
-                              <p className="text-sm font-semibold text-slate-700">No customer found</p>
-                              <p className="mt-1 text-xs text-slate-500">
+                              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">No customer found</p>
+                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                                 Add a new customer and continue creating this bill.
                               </p>
                               <Button
                                 type="button"
                                 size="sm"
                                 onClick={openAddCustomerDialog}
-                                className="mt-3 gap-2 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+                                className="mt-3 gap-2 h-11 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
                               >
                                 <Plus className="h-3.5 w-3.5" />
                                 Add customer
@@ -1571,11 +1704,11 @@ export default function CreateBill() {
                 )}
 
                 {selectedCustomer && advanceAvailable > 0 && (
-                  <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 px-3.5 py-2.5">
-                    <span className="text-xs font-semibold text-emerald-800">
+                  <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-emerald-100 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/40 px-3.5 py-2.5">
+                    <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">
                       Available customer advance
                     </span>
-                    <span className="text-sm font-bold tabular-nums text-emerald-800">
+                    <span className="text-sm font-bold tabular-nums text-emerald-800 dark:text-emerald-300">
                       {formatCurrency(advanceAvailable)}
                     </span>
                   </div>
@@ -1619,7 +1752,7 @@ export default function CreateBill() {
                 </FormField>
 
                 <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
-                  <span className="mr-1 text-xs font-medium text-slate-500">Due in</span>
+                  <span className="mr-1 text-xs font-medium text-slate-500 dark:text-slate-400">Due in</span>
                   {DUE_SHORTCUTS.map((shortcut) => (
                     <ChipButton
                       key={shortcut.days}
@@ -1633,7 +1766,7 @@ export default function CreateBill() {
                     <button
                       type="button"
                       onClick={() => setDueDate("")}
-                      className="ml-1 text-xs font-semibold text-slate-500 hover:text-rose-600"
+                      className="ml-1 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-rose-600"
                     >
                       Clear
                     </button>
@@ -1646,7 +1779,7 @@ export default function CreateBill() {
                     onChange={(e) => setNotes(e.target.value)}
                     placeholder="Add any additional information…"
                     rows={3}
-                    className="resize-none rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm text-slate-800 shadow-sm shadow-slate-900/[0.02] transition-all placeholder:text-slate-400 hover:border-violet-200 focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/15"
+                    className="resize-none rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-3 text-sm text-slate-800 dark:text-slate-200 shadow-sm shadow-slate-900/[0.02] transition-all placeholder:text-slate-400 hover:border-violet-200 dark:hover:border-slate-600 focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/15"
                   />
                 </FormField>
               </div>
@@ -1664,13 +1797,16 @@ export default function CreateBill() {
                   variant="outline"
                   size="sm"
                   onClick={addItem}
-                  className="shrink-0 gap-2 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+                  className="shrink-0 gap-2 h-11 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
                 >
                   <Plus className="h-4 w-4" aria-hidden="true" />
                   Add item
                 </Button>
               }
             >
+              <p className="mb-3 rounded-lg border border-emerald-100 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/40 px-3 py-2 text-[11px] leading-5 text-emerald-800 dark:text-emerald-300">
+                New items appear at the top. Enter a fixed ₹ discount or type a percentage like 30%; quick percentage options are below. Use Enter or ↑ / ↓ to move between fields.
+              </p>
               <div className="space-y-3">
                 {items.map((item, index) => {
                   const calc = calculated.itemCalcs[index]
@@ -1678,17 +1814,17 @@ export default function CreateBill() {
                   return (
                     <div
                       key={index}
-                      className="rounded-2xl border border-[#ece9f5] bg-white transition-colors hover:border-violet-200"
+                      className="rounded-2xl border border-[#ece9f5] dark:border-slate-700 bg-white dark:bg-slate-900 transition-colors hover:border-violet-200 dark:hover:border-slate-600"
                     >
-                      <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-[#eeecf5] bg-[#f5f3fc] px-4 py-2.5">
+                      <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-[#eeecf5] dark:border-slate-700 bg-[#f5f3fc] dark:bg-slate-800 px-4 py-2.5">
                         <div className="flex min-w-0 items-center gap-2.5">
                           <div
                             aria-hidden="true"
-                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-bold text-violet-700"
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-100 dark:bg-violet-950/50 text-xs font-bold text-violet-700 dark:text-violet-300"
                           >
                             {index + 1}
                           </div>
-                          <p className="truncate text-[13px] font-bold text-slate-800">
+                          <p className="truncate text-[13px] font-bold text-slate-800 dark:text-slate-200">
                             {item.item_name.trim() || `Item ${index + 1}`}
                           </p>
                         </div>
@@ -1697,7 +1833,7 @@ export default function CreateBill() {
                           <button
                             type="button"
                             onClick={() => duplicateItem(index)}
-                            className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-white hover:text-emerald-700"
+                            className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition-colors hover:bg-white hover:text-slate-800"
                             aria-label={`Duplicate item ${index + 1}`}
                             title="Duplicate item"
                           >
@@ -1708,7 +1844,7 @@ export default function CreateBill() {
                             <button
                               type="button"
                               onClick={() => removeItem(index)}
-                              className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                              className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
                               aria-label={`Remove item ${index + 1}`}
                               title="Remove item"
                             >
@@ -1721,6 +1857,7 @@ export default function CreateBill() {
                       <div className="space-y-3 p-4">
                         <FormField label="Item name *">
                           <Input
+                            ref={(element) => { itemNameRefs.current[index] = element }}
                             value={item.item_name}
                             onChange={(e) => updateItem(index, "item_name", e.target.value)}
                             placeholder="e.g. Cement, Notebook, Shirt"
@@ -1748,7 +1885,11 @@ export default function CreateBill() {
                               <SelectTrigger className={fieldClass}>
                                 <SelectValue />
                               </SelectTrigger>
-                              <SelectContent>
+                              <SelectContent
+                                position="popper"
+                                sideOffset={6}
+                                className="z-[100] max-h-[min(60vh,360px)] overflow-y-auto overscroll-contain"
+                              >
                                 {UNITS.map((unit) => (
                                   <SelectItem key={unit} value={unit}>
                                     {unit}
@@ -1770,15 +1911,83 @@ export default function CreateBill() {
                             />
                           </FormField>
 
-                          <FormField label="Discount (₹)">
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={item.discount}
-                              onChange={(e) => updateItem(index, "discount", e.target.value)}
-                              className={fieldClass}
-                            />
+                          <FormField
+                            label="Sale / Discount"
+                            hint={
+                              item.discount.trim().endsWith("%")
+                                ? `Percentage discount · ${formatCurrency(getItemDiscountAmount(item))} off`
+                                : item.discount.trim()
+                                  ? `Fixed discount · ${formatCurrency(getItemDiscountAmount(item))} off`
+                                  : "Enter ₹ amount or percentage, e.g. 30%"
+                            }
+                          >
+                            <div className="flex min-w-0 items-center gap-2">
+                              <Input
+                                type="text"
+                                inputMode="decimal"
+                                value={item.discount}
+                                onChange={(e) => updateItem(index, "discount", e.target.value)}
+                                placeholder="₹ amount or 30%"
+                                className={`${fieldClass} h-11 min-w-0 flex-1`}
+                                aria-label={`Sale or discount for item ${index + 1}`}
+                              />
+                              <div className="relative shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setDiscountMenuOpen((current) => current === index ? null : index)
+                                  }
+                                  aria-expanded={discountMenuOpen === index}
+                                  aria-haspopup="true"
+                                  aria-label="Choose discount percentage"
+                                  title="Choose discount percentage"
+                                  className="inline-flex h-11 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-0 text-slate-700 dark:text-slate-200 shadow-sm transition-colors hover:border-violet-200 dark:hover:border-slate-600 hover:bg-violet-50 dark:hover:bg-slate-700"
+                                >
+                                  <ChevronRight
+                                    className={`h-4 w-4 transition-transform ${
+                                      discountMenuOpen === index ? "rotate-90" : ""
+                                    }`}
+                                  />
+                                </button>
+
+                                {discountMenuOpen === index && (
+                                  <div className="absolute right-0 top-full z-30 mt-2 w-52 rounded-xl border border-violet-100 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 shadow-[0_10px_28px_rgba(80,65,130,0.16)]">
+                                  <p className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                                    Select percentage
+                                  </p>
+                                  <div className="grid grid-cols-4 gap-1.5">
+                                    {[5, 10, 15, 20, 25, 30, 40, 50].map((percent) => (
+                                      <button
+                                        key={percent}
+                                        type="button"
+                                        onClick={() => {
+                                          updateItem(index, "discount", `${percent}%`)
+                                          setDiscountMenuOpen(null)
+                                        }}
+                                        className={`rounded-lg border px-1.5 py-2 text-[11px] font-semibold transition-colors ${
+                                          item.discount === `${percent}%`
+                                            ? "border-violet-200 dark:border-slate-700 bg-violet-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+                                            : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:border-violet-200 dark:hover:border-slate-600 hover:bg-violet-50 dark:hover:bg-slate-700"
+                                        }`}
+                                      >
+                                        {percent}%
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      updateItem(index, "discount", "0")
+                                      setDiscountMenuOpen(null)
+                                    }}
+                                    className="mt-2 w-full rounded-lg px-2 py-1.5 text-left text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-50"
+                                  >
+                                    Clear discount
+                                  </button>
+                                </div>
+                                )}
+                              </div>
+                            </div>
                           </FormField>
 
                           <FormField label="GST rate">
@@ -1816,15 +2025,15 @@ export default function CreateBill() {
                             </FormField>
                           )}
 
-                          <div className="col-span-2 flex min-h-[44px] items-center justify-between self-end rounded-xl border border-emerald-100 bg-emerald-50/60 px-3.5 py-2">
+                          <div className="col-span-2 flex min-h-[44px] items-center justify-between self-end rounded-xl border border-emerald-100 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/40 px-3.5 py-2">
                             <div className="min-w-0">
-                              <p className="text-xs font-semibold text-emerald-800">Item total</p>
-                              <p className="truncate text-[11px] text-slate-500">
+                              <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">Item total</p>
+                              <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
                                 Taxable {formatCurrency(calc?.taxableAmount || 0)} · GST{" "}
                                 {formatCurrency(calc?.gstAmount || 0)}
                               </p>
                             </div>
-                            <span className="shrink-0 text-base font-bold tabular-nums text-slate-900">
+                            <span className="shrink-0 text-base font-bold tabular-nums text-slate-900 dark:text-slate-100">
                               {formatCurrency(calc?.totalAmount || 0)}
                             </span>
                           </div>
@@ -1844,13 +2053,13 @@ export default function CreateBill() {
                 })}
               </div>
 
-              <div className="mt-4 flex items-center justify-between border-t border-[#eeecf5] pt-3">
-                <span className="text-xs font-medium text-slate-600">
+              <div className="mt-4 flex items-center justify-between border-t border-[#eeecf5] dark:border-slate-700 pt-3">
+                <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
                   {namedItemCount} {namedItemCount === 1 ? "item" : "items"}
                 </span>
                 <div className="text-right">
-                  <p className="text-xs text-slate-500">Subtotal</p>
-                  <p className="text-sm font-bold tabular-nums text-slate-900">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Subtotal</p>
+                  <p className="text-sm font-bold tabular-nums text-slate-900 dark:text-slate-100">
                     {formatCurrency(calculated.subtotal)}
                   </p>
                 </div>
@@ -1902,7 +2111,7 @@ export default function CreateBill() {
                     />
                   </FormField>
 
-                  <p className="col-span-2 text-[11px] leading-4 text-slate-500">
+                  <p className="col-span-2 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
                     Bill discount is shared across all items. Use a negative round off to reduce
                     the total.
                   </p>
@@ -1918,22 +2127,48 @@ export default function CreateBill() {
               icon={Upload}
             >
               {!offlineBillFile ? (
-                <div className="relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-violet-200 bg-[#faf9ff] px-4 py-8 text-center transition-colors hover:border-emerald-400 hover:bg-emerald-50/30">
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={handleOfflineBillChange}
-                    aria-label="Upload offline bill"
-                    className="absolute inset-0 cursor-pointer opacity-0"
-                  />
-                  <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
-                    <Upload className="h-5 w-5" aria-hidden="true" />
+                <div className="space-y-3">
+                  <div className="relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-violet-200 dark:border-slate-700 bg-[#faf9ff] dark:bg-slate-800/80 px-4 py-7 text-center transition-colors hover:border-emerald-400 hover:bg-emerald-50/30">
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={handleOfflineBillChange}
+                      aria-label="Choose offline bill from device"
+                      className="absolute inset-0 cursor-pointer opacity-0"
+                    />
+                    <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300">
+                      <Upload className="h-5 w-5" aria-hidden="true" />
+                    </div>
+                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Choose bill from device</p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">PNG, JPG or PDF · max 5 MB</p>
                   </div>
-                  <p className="text-sm font-semibold text-slate-800">Click to upload bill</p>
-                  <p className="mt-1 text-xs text-slate-500">PNG, JPG or PDF · max 5 MB</p>
+
+                  <input
+                    ref={offlineBillCameraRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handleOfflineBillChange}
+                    aria-label="Take a photo of offline bill"
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      if (offlineBillCameraRef.current) {
+                        offlineBillCameraRef.current.value = ""
+                        offlineBillCameraRef.current.click()
+                      }
+                    }}
+                    className="h-11 w-full gap-2 rounded-xl border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
+                  >
+                    <Camera className="h-4 w-4" aria-hidden="true" />
+                    Take photo &amp; upload bill
+                  </Button>
                 </div>
               ) : (
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-violet-100 bg-[#faf9ff] p-3.5">
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-violet-100 dark:border-slate-700 bg-[#faf9ff] dark:bg-slate-800/80 p-3.5">
                   <div className="flex min-w-0 items-center gap-3">
                     {offlineBillPreview ? (
                       <img
@@ -1942,30 +2177,55 @@ export default function CreateBill() {
                         className="h-12 w-12 shrink-0 rounded-lg object-cover ring-1 ring-violet-100"
                       />
                     ) : (
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300">
                         <FileText className="h-5 w-5" aria-hidden="true" />
                       </div>
                     )}
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-800">
+                      <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-200">
                         {offlineBillFile.name}
                       </p>
-                      <p className="mt-0.5 text-xs text-slate-500">
+                      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                         {(offlineBillFile.size / 1024 / 1024).toFixed(2)} MB
                       </p>
                     </div>
                   </div>
 
-                  <Button
+                  <div className="flex shrink-0 items-center gap-2">
+                    <input
+                      ref={offlineBillCameraRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={handleOfflineBillChange}
+                      aria-label="Take another photo of offline bill"
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        if (offlineBillCameraRef.current) {
+                          offlineBillCameraRef.current.value = ""
+                          offlineBillCameraRef.current.click()
+                        }
+                      }}
+                      className="h-9 gap-1.5 rounded-lg border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs text-slate-700 dark:text-slate-200 hover:bg-violet-50 dark:hover:bg-slate-700"
+                    >
+                      <Camera className="h-3.5 w-3.5" />
+                      Photo
+                    </Button>
+                    <Button
                     type="button"
                     variant="ghost"
                     size="icon"
                     onClick={removeOfflineBill}
                     aria-label="Remove attachment"
-                    className="w-8 shrink-0 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+                    className="w-8 shrink-0 h-11 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
                   >
                     <X className="h-4 w-4" />
-                  </Button>
+                    </Button>
+                  </div>
                 </div>
               )}
             </Section>
@@ -1994,7 +2254,7 @@ export default function CreateBill() {
                   value={`-${formatCurrency(calculated.billDiscount)}`}
                 />
 
-                <div className="border-t border-[#eeecf5] pt-3">
+                <div className="border-t border-[#eeecf5] dark:border-slate-700 pt-3">
                   <SummaryRow
                     label="Taxable amount"
                     value={formatCurrency(calculated.taxable)}
@@ -2002,7 +2262,7 @@ export default function CreateBill() {
                   />
                 </div>
 
-                <div className="space-y-2 border-t border-[#eeecf5] pt-3">
+                <div className="space-y-2 border-t border-[#eeecf5] dark:border-slate-700 pt-3">
                   {isInterstate ? (
                     <SummaryRow label="IGST" value={formatCurrency(calculated.igst)} />
                   ) : (
@@ -2015,10 +2275,10 @@ export default function CreateBill() {
                   <SummaryRow label="Round off" value={formatCurrency(numberValue(roundOff))} />
                 </div>
 
-                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+                <div className="rounded-2xl border border-emerald-100 dark:border-emerald-900 bg-emerald-50/70 dark:bg-emerald-950/40 p-4">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm font-semibold text-emerald-800">Grand total</span>
-                    <span className="text-2xl font-extrabold tracking-tight tabular-nums text-slate-900">
+                    <span className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Grand total</span>
+                    <span className="text-2xl font-extrabold tracking-tight tabular-nums text-slate-900 dark:text-slate-100">
                       {formatCurrency(calculated.grandTotal)}
                     </span>
                   </div>
@@ -2056,7 +2316,7 @@ export default function CreateBill() {
                         type="button"
                         variant="outline"
                         onClick={useFullAdvance}
-                        className="shrink-0 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+                        className="shrink-0 h-11 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
                       >
                         Use max
                       </Button>
@@ -2079,7 +2339,7 @@ export default function CreateBill() {
                       type="button"
                       variant="outline"
                       onClick={payFull}
-                      className="shrink-0 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+                      className="shrink-0 h-11 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
                     >
                       Full
                     </Button>
@@ -2104,11 +2364,11 @@ export default function CreateBill() {
                 {/* Collection progress */}
                 <div>
                   <div className="mb-1.5 flex items-center justify-between text-xs">
-                    <span className="font-medium text-slate-600">Settled</span>
-                    <span className="font-bold tabular-nums text-slate-800">{settledPercent}%</span>
+                    <span className="font-medium text-slate-600 dark:text-slate-300">Settled</span>
+                    <span className="font-bold tabular-nums text-slate-800 dark:text-slate-200">{settledPercent}%</span>
                   </div>
                   <div
-                    className="h-2.5 overflow-hidden rounded-full bg-rose-100"
+                    className="h-2.5 overflow-hidden rounded-full bg-rose-100 dark:bg-rose-950/50"
                     role="progressbar"
                     aria-label="Amount settled"
                     aria-valuemin={0}
@@ -2122,7 +2382,7 @@ export default function CreateBill() {
                   </div>
                 </div>
 
-                <div className="space-y-2.5 border-t border-[#eeecf5] pt-3">
+                <div className="space-y-2.5 border-t border-[#eeecf5] dark:border-slate-700 pt-3">
                   {calculated.advanceUsed > 0 && (
                     <SummaryRow
                       label="Advance adjusted"
@@ -2131,9 +2391,9 @@ export default function CreateBill() {
                   )}
                   <SummaryRow label="Paid now" value={formatCurrency(calculated.amountPaid)} />
 
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-rose-100 bg-rose-50/70 px-3.5 py-2.5">
-                    <span className="text-sm font-semibold text-rose-700">Remaining due</span>
-                    <span className="text-base font-bold tabular-nums text-rose-700">
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-rose-100 dark:border-rose-900 bg-rose-50/70 dark:bg-rose-950/30 px-3.5 py-2.5">
+                    <span className="text-sm font-semibold text-rose-700 dark:text-rose-300">Remaining due</span>
+                    <span className="text-base font-bold tabular-nums text-rose-700 dark:text-rose-300">
                       {formatCurrency(calculated.amountDue)}
                     </span>
                   </div>
@@ -2154,10 +2414,16 @@ export default function CreateBill() {
                   <ChecklistItem done={Boolean(billDate)} label={`Bill date: ${formatDate(billDate)}`} />
                 </ul>
 
+                {paymentExceedsBill && (
+                  <p role="alert" className="mb-2 text-xs font-semibold text-red-600 dark:text-red-300">
+                    Received amount is greater than the bill total. Please reduce the payment amount to continue.
+                  </p>
+                )}
                 <Button
-                  type="submit"
-                  disabled={saving || !readyToCreate}
-                  className="w-full gap-2 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={saving || !readyToCreate || paymentExceedsBill}
+                  className="w-full gap-2 h-11 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
                 >
                   {saving ? (
                     <>
@@ -2177,12 +2443,12 @@ export default function CreateBill() {
                   variant="outline"
                   disabled={saving}
                   onClick={() => navigate(-1)}
-                  className="w-full gap-2 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+                  className="w-full gap-2 h-11 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
                 >
                   Cancel
                 </Button>
 
-                <p className="text-center text-[11px] leading-4 text-slate-500">
+                <p className="text-center text-[11px] leading-4 text-slate-500 dark:text-slate-400">
                   Review customer, items and payment details before creating the bill.
                 </p>
               </CardContent>
@@ -2192,18 +2458,19 @@ export default function CreateBill() {
 
         {/* MOBILE ACTION BAR */}
 
-        <div className="sticky bottom-3 z-30 mt-4 flex items-center justify-between gap-3 rounded-2xl border border-violet-100 bg-white/95 p-3 shadow-[0_12px_32px_rgba(80,65,130,0.25)] backdrop-blur xl:hidden">
+        <div className="sticky bottom-3 z-30 mt-4 flex items-center justify-between gap-3 rounded-2xl border border-violet-100 dark:border-slate-700 bg-white/95 dark:bg-slate-900/95 p-3 shadow-[0_12px_32px_rgba(80,65,130,0.25)] backdrop-blur xl:hidden">
           <div className="min-w-0">
-            <p className="text-[11px] font-medium text-slate-500">Grand total</p>
-            <p className="truncate text-lg font-bold tabular-nums text-slate-900">
+            <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Grand total</p>
+            <p className="truncate text-lg font-bold tabular-nums text-slate-900 dark:text-slate-100">
               {formatCurrency(calculated.grandTotal)}
             </p>
           </div>
 
           <Button
-            type="submit"
+            type="button"
+            onClick={handleSubmit}
             disabled={saving || !readyToCreate}
-            className="shrink-0 gap-2 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+            className="shrink-0 gap-2 h-11 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
           >
             {saving ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -2215,18 +2482,286 @@ export default function CreateBill() {
         </div>
       </form>
 
+      <Dialog open={reviewOpen} onOpenChange={(open) => !saving && setReviewOpen(open)}>
+        <DialogContent className="flex max-h-[94vh] w-[calc(100vw-1.5rem)] max-w-4xl flex-col gap-0 overflow-hidden rounded-[20px] border border-violet-100 dark:border-slate-700 p-0 shadow-[0_12px_32px_rgba(80,65,130,0.20)]">
+          <DialogHeader className="border-b border-[#eae7f4] dark:border-slate-700 bg-[#f7f5ff] dark:bg-slate-950 px-5 py-4 text-left">
+            <div className="flex items-center gap-3 pr-8">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300">
+                <Eye className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <DialogTitle className="text-base font-bold text-[#171a36] dark:text-slate-100">
+                  Bill preview
+                </DialogTitle>
+                <DialogDescription className="text-xs">
+                  Review the invoice details before creating this bill.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="min-h-0 flex-1 overflow-y-auto bg-[#efedf7] dark:bg-slate-950 p-3 sm:p-6">
+            <article className="mx-auto max-w-3xl overflow-hidden rounded-xl bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 shadow-[0_2px_12px_rgba(15,23,42,0.10)]">
+              {/* Shop letterhead and invoice heading */}
+              <div className="flex flex-col gap-4 px-6 pt-6 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xl font-bold tracking-tight text-slate-950 dark:text-slate-100">
+                    {currentShop.name || "Shop"}
+                  </p>
+                  <div className="mt-2 space-y-0.5 text-sm text-slate-500 dark:text-slate-400">
+                    {currentShop.address && <p className="max-w-xs">{currentShop.address}</p>}
+                    {currentShop.mobile && <p>Mobile: {currentShop.mobile}</p>}
+                    {currentShop.gstin && (
+                      <p>
+                        GSTIN: <span className="font-medium text-slate-700 dark:text-slate-200">{currentShop.gstin}</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="sm:text-right">
+                  <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                    {currentShop.gstin ? "Tax invoice preview" : "Invoice preview"}
+                  </p>
+                  <p className="mt-1 text-2xl font-bold tracking-tight text-slate-950 dark:text-slate-100">
+                    Draft
+                  </p>
+                  <div className="mt-2 sm:flex sm:justify-end">
+                    <StatusBadge status={paymentStatus} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Customer and bill details */}
+              <div className="mt-6 grid grid-cols-1 gap-5 border-y border-slate-100 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/70 px-6 py-5 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Billed to</p>
+                  <p className="mt-1.5 text-base font-bold text-slate-900 dark:text-slate-100">
+                    {selectedCustomer?.name || "Walk-in customer"}
+                  </p>
+                  <div className="mt-1 space-y-0.5 text-sm text-slate-500 dark:text-slate-400">
+                    {selectedCustomer?.mobile && <p>Mobile: {selectedCustomer.mobile}</p>}
+                    {[
+                      selectedCustomer?.address,
+                      selectedCustomer?.city,
+                      selectedCustomer?.state,
+                      selectedCustomer?.pincode,
+                    ].filter(Boolean).length > 0 && (
+                      <p>
+                        {[
+                          selectedCustomer?.address,
+                          selectedCustomer?.city,
+                          selectedCustomer?.state,
+                          selectedCustomer?.pincode,
+                        ].filter(Boolean).join(", ")}
+                      </p>
+                    )}
+                    {selectedCustomer?.gstin && <p>GSTIN: {selectedCustomer.gstin}</p>}
+                  </div>
+                </div>
+                <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                  {[
+                    ["Bill date", billDate ? formatDate(billDate) : "—"],
+                    ["Due date", dueDate ? formatDate(dueDate) : "Not set"],
+                    ["Supply type", isInterstate ? "Interstate (IGST)" : "Intrastate (CGST + SGST)"],
+                    ["Tax calculation", taxInclusive ? "Tax inclusive" : "Tax exclusive"],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</dt>
+                      <dd className="mt-0.5 font-semibold text-slate-900 dark:text-slate-100">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+
+              {/* Invoice item table */}
+              <div className="overflow-x-auto px-6 py-5">
+                <table className="w-full min-w-[600px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b-2 border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      <th className="w-10 py-2.5 pr-2">#</th>
+                      <th className="px-2 py-2.5">Item</th>
+                      <th className="px-2 py-2.5 text-right">Qty</th>
+                      <th className="px-2 py-2.5 text-right">Rate</th>
+                      <th className="px-2 py-2.5 text-right">Disc.</th>
+                      <th className="px-2 py-2.5 text-right">GST</th>
+                      <th className="py-2.5 pl-2 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                    {items.filter((item) => item.item_name.trim()).length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-slate-500 dark:text-slate-400">
+                          No bill items found. Offline bill attachment only.
+                        </td>
+                      </tr>
+                    ) : (
+                      items.map((item, index) => {
+                        if (!item.item_name.trim()) return null
+                        const calc = calculated.itemCalcs[index]
+                        return (
+                          <tr key={`${item.item_name}-${index}`}>
+                            <td className="py-3 pr-2 text-slate-400 dark:text-slate-500">{index + 1}</td>
+                            <td className="px-2 py-3">
+                              <p className="font-medium text-slate-900 dark:text-slate-100">{item.item_name}</p>
+                              {item.description && (
+                                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{item.description}</p>
+                              )}
+                            </td>
+                            <td className="px-2 py-3 text-right tabular-nums">
+                              {calc.quantity} {item.unit || ""}
+                            </td>
+                            <td className="px-2 py-3 text-right tabular-nums">
+                              {formatCurrency(calc.rate)}
+                            </td>
+                            <td className="px-2 py-3 text-right tabular-nums">
+                              {calc.discount > 0 ? formatCurrency(calc.discount) : "—"}
+                            </td>
+                            <td className="px-2 py-3 text-right tabular-nums">
+                              {calc.gstPercent}%
+                            </td>
+                            <td className="py-3 pl-2 text-right font-semibold tabular-nums text-slate-900 dark:text-slate-100">
+                              {formatCurrency(calc.totalAmount)}
+                            </td>
+                          </tr>
+                        )
+                      })
+                    )}
+                  </tbody>
+                </table>
+                {namedItemCount > 0 && (
+                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    {namedItemCount} {namedItemCount === 1 ? "item" : "items"} · total quantity{" "}
+                    {items.reduce((sum, item) =>
+                      item.item_name.trim() ? sum + numberValue(item.quantity) : sum, 0
+                    )}
+                  </p>
+                )}
+                {offlineBillFile && (
+                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    Attachment: <span className="font-medium text-slate-700 dark:text-slate-200">{offlineBillFile.name}</span>
+                  </p>
+                )}
+              </div>
+
+              {/* Totals and payment summary */}
+              <div className="grid grid-cols-1 gap-6 border-t border-slate-200 dark:border-slate-700 px-6 py-5 sm:grid-cols-2">
+                <div className="space-y-4">
+                  {notes.trim() && (
+                    <div>
+                      <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Notes</p>
+                      <p className="mt-1 whitespace-pre-wrap text-sm leading-5 text-slate-600 dark:text-slate-300">
+                        {notes}
+                      </p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Payment status</p>
+                    <div className="mt-2">
+                      <StatusBadge status={paymentStatus} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="sm:ml-auto sm:w-full sm:max-w-xs">
+                  <SummaryRow label="Subtotal" value={formatCurrency(calculated.subtotal)} />
+                  {calculated.totalDiscount > 0 && (
+                    <SummaryRow
+                      label="Discount"
+                      value={`− ${formatCurrency(calculated.totalDiscount)}`}
+                    />
+                  )}
+                  {calculated.cgst > 0 && (
+                    <SummaryRow label="CGST" value={formatCurrency(calculated.cgst)} />
+                  )}
+                  {calculated.sgst > 0 && (
+                    <SummaryRow label="SGST" value={formatCurrency(calculated.sgst)} />
+                  )}
+                  {calculated.igst > 0 && (
+                    <SummaryRow label="IGST" value={formatCurrency(calculated.igst)} />
+                  )}
+                  {numberValue(roundOff) !== 0 && (
+                    <SummaryRow label="Round off" value={formatCurrency(numberValue(roundOff))} />
+                  )}
+
+                  <div className="mt-2 flex items-center justify-between gap-4 rounded-lg bg-slate-900 px-4 py-3 text-white">
+                    <span className="text-sm font-semibold">Grand total</span>
+                    <span className="text-lg font-bold tabular-nums">
+                      {formatCurrency(calculated.grandTotal)}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 border-t border-dashed border-slate-200 dark:border-slate-700 pt-1">
+                    {calculated.advanceUsed > 0 && (
+                      <SummaryRow
+                        label="Advance adjusted"
+                        value={`− ${formatCurrency(calculated.advanceUsed)}`}
+                      />
+                    )}
+                    <SummaryRow
+                      label="Payments received"
+                      value={`− ${formatCurrency(calculated.amountPaid)}`}
+                    />
+                    <SummaryRow
+                      label="Balance due"
+                      value={formatCurrency(calculated.amountDue)}
+                      tone={calculated.amountDue > 0 ? "text-rose-600 dark:text-rose-300" : "text-emerald-600"}
+                      emphasized
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Invoice footer */}
+              <div className="flex items-end justify-between gap-6 border-t border-slate-100 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/70 px-6 py-5">
+                <p className="max-w-xs text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  Please review the details carefully before confirming this bill.
+                </p>
+                <div className="text-center">
+                  <div className="mb-1.5 h-px w-40 bg-slate-300" />
+                  <p className="text-xs font-medium text-slate-600 dark:text-slate-300">Authorised signatory</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500">{currentShop.name || ""}</p>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <DialogFooter className="flex w-full flex-col items-end justify-end gap-3 border-t border-[#eae7f4] dark:border-slate-700 bg-[#f7f5ff] dark:bg-slate-950 px-5 py-3 sm:flex-row sm:items-center sm:justify-end">
+            <div className="ml-auto flex w-full justify-end gap-2 sm:w-auto">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving}
+              onClick={() => setReviewOpen(false)}
+              className="h-10 rounded-xl border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 text-slate-700 dark:text-slate-200 hover:bg-violet-50 dark:hover:bg-slate-700"
+            >
+              Cancel / Edit
+            </Button>
+            <Button
+              type="button"
+              disabled={saving}
+              onClick={confirmCreateBill}
+              className="h-11 gap-2 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              Confirm & Create
+            </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={duplicatePromptOpen} onOpenChange={setDuplicatePromptOpen}>
-        <DialogContent className="max-w-[440px] rounded-[20px] border border-violet-100 p-0 shadow-[0_12px_32px_rgba(80,65,130,0.25)]">
+        <DialogContent className="max-w-[440px] rounded-[20px] border border-violet-100 dark:border-slate-700 p-0 shadow-[0_12px_32px_rgba(80,65,130,0.25)]">
           <div className="p-6">
             <div className="flex items-start gap-4">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-700">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-700 dark:text-amber-300">
                 <CircleAlert className="h-5 w-5" aria-hidden="true" />
               </div>
               <div className="min-w-0">
-                <DialogTitle className="text-base font-bold text-[#171a36]">
+                <DialogTitle className="text-base font-bold text-[#171a36] dark:text-slate-100">
                   This customer already exists
                 </DialogTitle>
-                <DialogDescription className="mt-1 text-sm leading-6 text-slate-600">
+                <DialogDescription className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
                   {duplicateCustomer?.name || "This customer"} is already saved
                   {duplicateCustomer?.mobile ? ` with mobile number ${duplicateCustomer.mobile}` : ""}.
                   Would you like to edit the saved details or continue with this existing customer?
@@ -2234,9 +2769,9 @@ export default function CreateBill() {
               </div>
             </div>
 
-            <div className="mt-5 rounded-xl border border-violet-100 bg-[#f7f5ff] p-3">
-              <p className="text-sm font-semibold text-slate-800">{duplicateCustomer?.name}</p>
-              <p className="mt-1 text-xs text-slate-500">
+            <div className="mt-5 rounded-xl border border-violet-100 dark:border-slate-700 bg-[#f7f5ff] dark:bg-slate-950 p-3">
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">{duplicateCustomer?.name}</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                 {[duplicateCustomer?.mobile, duplicateCustomer?.city, duplicateCustomer?.state]
                   .filter(Boolean)
                   .join(" • ") || "Existing customer record"}
@@ -2244,7 +2779,7 @@ export default function CreateBill() {
             </div>
           </div>
 
-          <DialogFooter className="flex-col-reverse gap-2 border-t border-violet-100 bg-slate-50/80 p-4 sm:flex-row sm:justify-end">
+          <DialogFooter className="flex-col-reverse gap-2 border-t border-violet-100 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/70 p-4 sm:flex-row sm:justify-end">
             <Button
               type="button"
               variant="outline"
@@ -2252,7 +2787,7 @@ export default function CreateBill() {
                 setDuplicatePromptOpen(false)
                 setAddCustomerOpen(true)
               }}
-              className="h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+              className="h-11 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
             >
               Cancel
             </Button>
@@ -2260,14 +2795,14 @@ export default function CreateBill() {
               type="button"
               variant="outline"
               onClick={editExistingCustomer}
-              className="h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+              className="h-11 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
             >
               Edit customer
             </Button>
             <Button
               type="button"
               onClick={continueWithExistingCustomer}
-              className="h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+              className="h-11 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
             >
               Continue with existing
             </Button>
@@ -2287,16 +2822,16 @@ export default function CreateBill() {
         }}
       >
         <DialogContent className="max-h-[92vh] gap-0 overflow-hidden rounded-[20px] border-0 p-0 shadow-[0_12px_32px_rgba(80,65,130,0.25)] sm:max-w-[600px]">
-          <div className="border-b border-[#eae7f4] bg-[#f7f5ff] px-6 pb-5 pt-6">
+          <div className="border-b border-[#eae7f4] dark:border-slate-700 bg-[#f7f5ff] dark:bg-slate-950 px-6 pb-5 pt-6">
             <div className="flex items-start gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-700 text-white shadow-sm">
                 <UserRound className="h-5 w-5" aria-hidden="true" />
               </div>
               <div className="min-w-0 flex-1 pr-6">
-                <DialogTitle className="text-lg font-bold tracking-tight text-[#171a36]">
+                <DialogTitle className="text-lg font-bold tracking-tight text-[#171a36] dark:text-slate-100">
                   {editingCustomerId ? "Edit customer details" : "Add new customer"}
                 </DialogTitle>
-                <DialogDescription className="mt-1 text-sm text-slate-600">
+                <DialogDescription className="mt-1 text-sm text-slate-600 dark:text-slate-300">
                   {editingCustomerId
                     ? "Update the existing customer's details. The customer will remain selected for this bill."
                     : "Add complete customer details. The customer will be selected automatically for this bill."}
@@ -2306,10 +2841,10 @@ export default function CreateBill() {
           </div>
 
           <form onSubmit={handleAddCustomer} className="flex max-h-[calc(92vh-110px)] flex-col">
-            <div className="flex-1 space-y-6 overflow-y-auto bg-white px-6 py-6">
-              <section className="rounded-2xl border border-violet-100 bg-[#fbfaff] p-4 sm:p-5">
+            <div className="flex-1 space-y-6 overflow-y-auto bg-white dark:bg-slate-900 px-6 py-6">
+              <section className="rounded-2xl border border-violet-100 dark:border-slate-700 bg-[#fbfaff] dark:bg-slate-800/70 p-4 sm:p-5">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                  <div className="relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-violet-100 text-violet-700 shadow-[0_2px_10px_rgba(80,65,130,0.12)]">
+                  <div className="relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-white dark:border-slate-700 bg-violet-100 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300 shadow-[0_2px_10px_rgba(80,65,130,0.12)]">
                     {customerPhotoPreview ? (
                       <img src={customerPhotoPreview} alt="Customer profile preview" className="h-full w-full object-cover" />
                     ) : (
@@ -2317,8 +2852,8 @@ export default function CreateBill() {
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-[#171a36]">Customer profile photo</p>
-                    <p className="mt-1 text-xs leading-5 text-slate-500">Add a clear photo to identify this customer easily. JPG, PNG or WEBP · up to 5 MB.</p>
+                    <p className="text-sm font-semibold text-[#171a36] dark:text-slate-100">Customer profile photo</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">Add a clear photo to identify this customer easily. JPG, PNG or WEBP · up to 5 MB.</p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <input
                         ref={customerPhotoInputRef}
@@ -2330,7 +2865,7 @@ export default function CreateBill() {
                       <Button
                         type="button"
                         onClick={() => customerPhotoInputRef.current?.click()}
-                        className="h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+                        className="h-11 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
                       >
                         <ImagePlus className="mr-2 h-4 w-4" />
                         {customerPhotoPreview ? "Change photo" : "Add profile photo"}
@@ -2339,7 +2874,7 @@ export default function CreateBill() {
                         <Button
                           type="button"
                           onClick={removeCustomerPhoto}
-                          className="h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+                          className="h-11 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
                         >
                           Remove photo
                         </Button>
@@ -2351,8 +2886,8 @@ export default function CreateBill() {
 
               <section className="space-y-4">
                 <div>
-                  <h3 className="text-sm font-bold text-[#171a36]">Basic information</h3>
-                  <p className="mt-0.5 text-xs text-slate-500">Customer name and contact details.</p>
+                  <h3 className="text-sm font-bold text-[#171a36] dark:text-slate-100">Basic information</h3>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Customer name and contact details.</p>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <FormField label="Customer name *" className="sm:col-span-2">
@@ -2418,8 +2953,8 @@ export default function CreateBill() {
 
               <section className="space-y-4">
                 <div>
-                  <h3 className="text-sm font-bold text-[#171a36]">Address details</h3>
-                  <p className="mt-0.5 text-xs text-slate-500">Customer's billing or business address.</p>
+                  <h3 className="text-sm font-bold text-[#171a36] dark:text-slate-100">Address details</h3>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Customer's billing or business address.</p>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <FormField label="Address" className="sm:col-span-2">
@@ -2463,8 +2998,8 @@ export default function CreateBill() {
 
               <section className="space-y-4">
                 <div>
-                  <h3 className="text-sm font-bold text-[#171a36]">Opening balance</h3>
-                  <p className="mt-0.5 text-xs text-slate-500">Previous pending amount before using this app.</p>
+                  <h3 className="text-sm font-bold text-[#171a36] dark:text-slate-100">Opening balance</h3>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Previous pending amount before using this app.</p>
                 </div>
                 <FormField label="Opening balance (₹)" hint="Kept separately from bills created in this app.">
                   <Input
@@ -2483,33 +3018,33 @@ export default function CreateBill() {
 
               <section className="space-y-3">
                 <div>
-                  <h3 className="text-sm font-bold text-[#171a36]">Additional notes</h3>
-                  <p className="mt-0.5 text-xs text-slate-500">Anything else worth remembering about this customer.</p>
+                  <h3 className="text-sm font-bold text-[#171a36] dark:text-slate-100">Additional notes</h3>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Anything else worth remembering about this customer.</p>
                 </div>
                 <Textarea
                   value={newCustomer.notes}
                   onChange={(e) => setNewCustomer((v) => ({ ...v, notes: e.target.value }))}
                   placeholder="Add any additional information…"
                   rows={3}
-                  className="resize-none rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm text-slate-800 shadow-sm shadow-slate-900/[0.02] transition-all placeholder:text-slate-400 hover:border-violet-200 focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/15"
+                  className="resize-none rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-3 text-sm text-slate-800 dark:text-slate-200 shadow-sm shadow-slate-900/[0.02] transition-all placeholder:text-slate-400 hover:border-violet-200 dark:hover:border-slate-600 focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/15"
                 />
               </section>
             </div>
 
-            <DialogFooter className="border-t border-[#eae7f4] bg-[#f7f5ff] px-6 py-4 sm:justify-end sm:gap-2">
+            <DialogFooter className="border-t border-[#eae7f4] dark:border-slate-700 bg-[#f7f5ff] dark:bg-slate-950 px-6 py-4 sm:justify-end sm:gap-2">
               <Button
                 type="button"
                 variant="outline"
                 disabled={customerSaving}
                 onClick={() => setAddCustomerOpen(false)}
-                className="h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+                className="h-11 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
                 disabled={customerSaving || !newCustomer.name.trim()}
-                className="gap-2 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+                className="gap-2 h-11 rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700"
               >
                 {customerSaving ? (
                   <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</>

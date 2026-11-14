@@ -463,7 +463,7 @@ function PageHeader({
               <button
                 type="button"
                 onClick={copyBillNumber}
-                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
                 aria-label="Copy bill number"
                 title="Copy bill number"
               >
@@ -528,7 +528,7 @@ function PageHeader({
           <Button
             type="button"
             onClick={onRecordPayment}
-            className="h-11 gap-2 rounded-xl bg-emerald-700 px-5 text-white shadow-sm hover:bg-emerald-800"
+            className="h-11 gap-2 rounded-xl border border-violet-200 bg-white px-5 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
           >
             <Plus className="h-5 w-5" aria-hidden="true" />
             Record payment
@@ -820,7 +820,7 @@ function PaymentSummaryCard({ totals, isFullyPaid, dueInfo, onRecordPayment }) {
           <Button
             type="button"
             onClick={onRecordPayment}
-            className="h-11 w-full gap-2 rounded-xl bg-emerald-700 font-semibold text-white shadow-sm hover:bg-emerald-800"
+            className="h-11 w-full gap-2 rounded-xl border border-violet-200 bg-white font-semibold text-slate-700 shadow-sm hover:bg-violet-50"
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
             Record payment
@@ -1056,7 +1056,7 @@ function CustomerCard({ bill, customer, shop, totals }) {
               onClick={sendReminder}
               disabled={totals.amountDue <= 0}
               title={totals.amountDue <= 0 ? "No pending amount" : "Send payment reminder on WhatsApp"}
-              className="h-10 gap-2 rounded-xl border-emerald-200 bg-emerald-50 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+              className="h-10 gap-2 rounded-xl border-violet-200 bg-white text-sm font-semibold text-slate-700 hover:bg-violet-50 disabled:opacity-50"
             >
               <MessageCircle className="h-4 w-4" aria-hidden="true" />
               Remind
@@ -1151,7 +1151,7 @@ function AttachmentCard({ url, deleting, onDelete, onPreview }) {
             variant="outline"
             size="sm"
             onClick={onPreview}
-            className="h-9 gap-1.5 rounded-xl border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+            className="h-9 gap-1.5 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-violet-50"
           >
             <Eye className="h-3.5 w-3.5" aria-hidden="true" />
             Preview
@@ -1176,7 +1176,7 @@ function AttachmentCard({ url, deleting, onDelete, onPreview }) {
           type="button"
           onClick={onPreview}
           aria-label="Preview attached bill"
-          className="group relative block w-full overflow-hidden rounded-2xl border border-[#ece9f5] bg-[#faf9ff] text-left transition-all hover:border-emerald-400 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+          className="group relative block w-full overflow-hidden rounded-2xl border border-[#ece9f5] bg-[#faf9ff] text-left transition-all hover:border-violet-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
         >
           <div className="flex aspect-[4/3] items-center justify-center overflow-hidden p-2">
             {isImageUrl(url) ? (
@@ -1354,7 +1354,7 @@ function RecordPaymentDialog({ open, onClose, bill, status, customer, totals, to
                     key={fraction}
                     type="button"
                     onClick={() => setAmount(String(round2(totals.amountDue * fraction)))}
-                    className="rounded-full border border-violet-100 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                    className="rounded-full border border-violet-100 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
                   >
                     {fraction === 1 ? "Full amount" : `${fraction * 100}%`}
                   </button>
@@ -1423,7 +1423,7 @@ function RecordPaymentDialog({ open, onClose, bill, status, customer, totals, to
             <Button
               type="submit"
               disabled={saving || !isValid}
-              className="h-11 gap-2 rounded-xl bg-emerald-700 px-6 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 disabled:opacity-50"
+              className="h-11 gap-2 rounded-xl border border-violet-200 bg-white px-6 text-sm font-semibold text-slate-700 shadow-sm hover:bg-violet-50 disabled:opacity-50"
             >
               {saving ? (
                 <>
@@ -1691,7 +1691,7 @@ function BillPreviewDialog({ open, onOpenChange, bill, items, customer, shop, to
           <Button
             type="button"
             onClick={onDownload}
-            className="h-10 gap-2 rounded-xl bg-emerald-700 text-white hover:bg-emerald-800"
+            className="h-10 gap-2 rounded-xl border border-violet-200 bg-white text-slate-700 hover:bg-violet-50"
           >
             <Download className="h-4 w-4" aria-hidden="true" />
             Download PDF
@@ -1771,7 +1771,7 @@ function AttachmentPreviewDialog({ open, onOpenChange, url, billNumber }) {
           <Button
             type="button"
             onClick={() => onOpenChange(false)}
-            className="h-10 rounded-xl bg-emerald-700 text-white hover:bg-emerald-800"
+            className="h-10 rounded-xl border border-violet-200 bg-white text-slate-700 hover:bg-violet-50"
           >
             Close
           </Button>
@@ -2057,7 +2057,7 @@ export default function BillDetail() {
             <Button
               type="button"
               onClick={() => navigate("/bills")}
-              className="rounded-xl bg-emerald-700 hover:bg-emerald-800"
+              className="rounded-xl border border-violet-200 bg-white text-slate-700 hover:bg-violet-50"
             >
               <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
               Back to bills

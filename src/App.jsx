@@ -21,6 +21,8 @@ import Settings from "@/pages/Settings"
 import Profile from "@/pages/Profile"
 import CustomerDetails from "@/pages/CustomerDetails"
 import KhataDetail from "@/pages/KhataDetail"
+import TownCollections from "@/pages/TownCollections"
+import ImportOfflineBill from "@/pages/ImportOfflineBill"
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -78,7 +80,12 @@ export default function App() {
                   <Route path="/customers/:customerId" element={<CustomerDetails />} />
                   <Route path="/payments" element={<Payments />} />
                   <Route path="/settings" element={<Settings />} />
+                  <Route path="/bills/import" element={<ImportOfflineBill />} />
                   <Route path="/profile" element={<Profile />} />
+                  <Route
+                          path="/town-collections"
+                          element={<TownCollections />}
+                        />
                 </Route>
 
                 <Route path="*" element={<Navigate to="/" replace />} />
