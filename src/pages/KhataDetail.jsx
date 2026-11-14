@@ -25,12 +25,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
-// New edit-customer dialog (same folder as this file)
-import EditCustomerDialog, {
-  buildEditForm,
-  buildCustomerPayload,
-  validateCustomerForm,
-} from "./EditCustomerDialog"
 
 import {
   AlertCircle,
@@ -2479,5 +2473,378 @@ export default function KhataDetail() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+/* ==================================================
+   INLINE EDIT CUSTOMER DIALOG
+   Kept in this file to avoid a separate component import.
+================================================== */
+
+const EMPTY_FORM = {
+  name: "",
+  mobile: "",
+  address: "",
+  email: "",
+  pin_code: "",
+  gstin: "",
+  customer_type: "",
+  notes: "",
+  photo: null,
+  photo_preview: "",
+}
+
+function buildEditForm(customer = {}) {
+  return {
+    ...EMPTY_FORM,
+    name: customer.name || "",
+    mobile: customer.mobile || "",
+    address: customer.address || "",
+    email: customer.email || "",
+    pin_code: customer.pin_code || "",
+    gstin: customer.gstin || "",
+    customer_type: customer.customer_type || "",
+    notes: customer.notes || "",
+    photo: null,
+    photo_preview: customer.photo || "",
+  }
+}
+
+function buildCustomerPayload(form, photoUrl) {
+  return {
+    customer_name: form.name.trim().replace(/\s+/g, " "),
+    mobile: form.mobile.trim() || null,
+    address: form.address.trim() || null,
+    email: form.email.trim() || null,
+    pin_code: form.pin_code.trim() || null,
+    gstin: form.gstin.trim().toUpperCase() || null,
+    customer_type: form.customer_type || null,
+    customer_notes: form.notes.trim() || null,
+    customer_photo: photoUrl || null,
+  }
+}
+
+function validateCustomerForm(form) {
+  const errors = {}
+  const name = String(form.name || "").trim()
+  const mobile = String(form.mobile || "").replace(/\D/g, "")
+  const email = String(form.email || "").trim()
+  const pin = String(form.pin_code || "").trim()
+  const gstin = String(form.gstin || "").trim().toUpperCase()
+
+  if (!name) errors.name = "Customer name is required."
+  else if (name.length > 100) errors.name = "Name must be 100 characters or fewer."
+
+  if (mobile && (mobile.length < 10 || mobile.length > 13)) {
+    errors.mobile = "Enter a valid mobile number."
+  }
+
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errors.email = "Enter a valid email address."
+  }
+
+  if (pin && !/^\d{6}$/.test(pin)) {
+    errors.pin_code = "PIN code must contain 6 digits."
+  }
+
+  if (gstin && !/^[0-9A-Z]{15}$/.test(gstin)) {
+    errors.gstin = "GSTIN must contain 15 letters and numbers."
+  }
+
+  return errors
+}
+
+function FieldError({ children }) {
+  if (!children) return null
+  return <p className="mt-1 text-xs text-rose-600">{children}</p>
+}
+
+function EditCustomerDialog({
+  open,
+  onOpenChange,
+  form,
+  setForm,
+  errors = {},
+  setErrors,
+  customer,
+  entryCount = 0,
+  saving = false,
+  onPhotoChange,
+  onSubmit,
+}) {
+  const update = (key, value) => {
+    setForm((previous) => ({ ...previous, [key]: value }))
+    if (errors[key]) {
+      setErrors((previous) => ({ ...previous, [key]: "" }))
+    }
+  }
+
+  const inputClass =
+    "h-10 rounded-xl border-violet-200 bg-white text-sm shadow-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
+
+  const labelClass = "mb-1.5 block text-xs font-semibold text-slate-600"
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
+      <DialogContent className="!flex !max-h-[90dvh] w-[calc(100%-1rem)] max-w-[680px] flex-col gap-0 overflow-hidden rounded-[20px] border border-violet-100 bg-white p-0 shadow-[0_24px_80px_rgba(39,31,79,0.20)] sm:rounded-[24px]">
+        <DialogHeader className="shrink-0 border-b border-violet-100 px-4 py-4 pr-12 text-left sm:px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-100 bg-violet-50 text-violet-700">
+              <User className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <DialogTitle className="text-base font-bold tracking-tight text-[#171a39]">
+                Edit customer
+              </DialogTitle>
+              <DialogDescription className="mt-0.5 text-xs leading-5 text-slate-500">
+                Update customer information across this ledger
+              </DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
+
+        <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
+            <div className="flex items-center gap-4 rounded-xl border border-violet-100 bg-[#faf9ff] p-3.5">
+              <div className="flex h-[68px] w-[68px] shrink-0 items-center justify-center overflow-hidden rounded-full border border-violet-100 bg-white text-violet-700">
+                {form.photo_preview ? (
+                  <img
+                    src={form.photo_preview}
+                    alt="Customer preview"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <User className="h-7 w-7" aria-hidden="true" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-slate-800">
+                  {form.name || customer?.name || "Customer photo"}
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  JPG, PNG or other image format · Maximum 2 MB
+                </p>
+                <label className="mt-2 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-violet-50">
+                  <Camera className="h-3.5 w-3.5" aria-hidden="true" />
+                  Choose photo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    onChange={onPhotoChange}
+                    disabled={saving}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <section className="space-y-3">
+              <div className="flex items-center gap-2 border-b border-violet-100 pb-2">
+                <User className="h-4 w-4 text-slate-500" aria-hidden="true" />
+                <h3 className="text-sm font-bold text-[#171a39]">Basic information</h3>
+              </div>
+
+              <div>
+                <Label htmlFor="edit-customer-name" className={labelClass}>
+                  Customer name <span className="text-rose-600">*</span>
+                </Label>
+                <Input
+                  id="edit-customer-name"
+                  value={form.name}
+                  onChange={(event) => update("name", event.target.value)}
+                  placeholder="Enter customer name"
+                  maxLength={100}
+                  className={inputClass}
+                  aria-invalid={Boolean(errors.name)}
+                  disabled={saving}
+                />
+                <FieldError>{errors.name}</FieldError>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="edit-customer-mobile" className={labelClass}>
+                    Mobile number
+                  </Label>
+                  <div className="relative">
+                    <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      id="edit-customer-mobile"
+                      value={form.mobile}
+                      onChange={(event) => update("mobile", event.target.value)}
+                      placeholder="Mobile number"
+                      inputMode="tel"
+                      className={`${inputClass} pl-9`}
+                      aria-invalid={Boolean(errors.mobile)}
+                      disabled={saving}
+                    />
+                  </div>
+                  <FieldError>{errors.mobile}</FieldError>
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-customer-email" className={labelClass}>
+                    Email address
+                  </Label>
+                  <div className="relative">
+                    <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      id="edit-customer-email"
+                      type="email"
+                      value={form.email}
+                      onChange={(event) => update("email", event.target.value)}
+                      placeholder="name@example.com"
+                      className={`${inputClass} pl-9`}
+                      aria-invalid={Boolean(errors.email)}
+                      disabled={saving}
+                    />
+                  </div>
+                  <FieldError>{errors.email}</FieldError>
+                </div>
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <div className="flex items-center gap-2 border-b border-violet-100 pb-2">
+                <MapPin className="h-4 w-4 text-slate-500" aria-hidden="true" />
+                <h3 className="text-sm font-bold text-[#171a39]">Address details</h3>
+              </div>
+
+              <div>
+                <Label htmlFor="edit-customer-address" className={labelClass}>
+                  Address
+                </Label>
+                <Textarea
+                  id="edit-customer-address"
+                  value={form.address}
+                  onChange={(event) => update("address", event.target.value)}
+                  placeholder="House, street, area, city"
+                  rows={3}
+                  className="min-h-[84px] resize-y rounded-xl border-violet-200 bg-white text-sm shadow-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
+                  disabled={saving}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="edit-customer-pin" className={labelClass}>
+                    PIN code
+                  </Label>
+                  <Input
+                    id="edit-customer-pin"
+                    value={form.pin_code}
+                    onChange={(event) => update("pin_code", event.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="6-digit PIN"
+                    inputMode="numeric"
+                    maxLength={6}
+                    className={inputClass}
+                    aria-invalid={Boolean(errors.pin_code)}
+                    disabled={saving}
+                  />
+                  <FieldError>{errors.pin_code}</FieldError>
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-customer-type" className={labelClass}>
+                    Customer type
+                  </Label>
+                  <select
+                    id="edit-customer-type"
+                    value={form.customer_type}
+                    onChange={(event) => update("customer_type", event.target.value)}
+                    className={`${inputClass} w-full px-3`}
+                    disabled={saving}
+                  >
+                    <option value="">Select type</option>
+                    <option value="individual">Individual</option>
+                    <option value="business">Business</option>
+                    <option value="wholesale">Wholesale</option>
+                    <option value="retail">Retail</option>
+                    <option value="regular">Regular</option>
+                  </select>
+                </div>
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <div className="flex items-center gap-2 border-b border-violet-100 pb-2">
+                <Receipt className="h-4 w-4 text-slate-500" aria-hidden="true" />
+                <h3 className="text-sm font-bold text-[#171a39]">Business and notes</h3>
+              </div>
+
+              <div>
+                <Label htmlFor="edit-customer-gstin" className={labelClass}>
+                  GSTIN
+                </Label>
+                <Input
+                  id="edit-customer-gstin"
+                  value={form.gstin}
+                  onChange={(event) => update("gstin", event.target.value.toUpperCase().slice(0, 15))}
+                  placeholder="15-character GSTIN"
+                  maxLength={15}
+                  className={inputClass}
+                  aria-invalid={Boolean(errors.gstin)}
+                  disabled={saving}
+                />
+                <FieldError>{errors.gstin}</FieldError>
+              </div>
+
+              <div>
+                <Label htmlFor="edit-customer-notes" className={labelClass}>
+                  Additional notes
+                </Label>
+                <Textarea
+                  id="edit-customer-notes"
+                  value={form.notes}
+                  onChange={(event) => update("notes", event.target.value)}
+                  placeholder="Add any useful customer notes"
+                  rows={3}
+                  className="min-h-[84px] resize-y rounded-xl border-violet-200 bg-white text-sm shadow-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
+                  disabled={saving}
+                />
+              </div>
+            </section>
+
+            <div className="rounded-xl border border-violet-100 bg-[#faf9ff] px-3.5 py-3 text-xs leading-5 text-slate-600">
+              <div className="flex items-start gap-2">
+                <Store className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+                <p>
+                  These details will be updated for all {entryCount} entries in this customer’s ledger.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="shrink-0 border-t border-violet-100 bg-white px-4 py-3.5 sm:px-6">
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={saving}
+                className="h-10 w-full rounded-xl border-violet-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-none hover:bg-violet-50 sm:w-auto sm:min-w-[110px]"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="outline"
+                disabled={saving}
+                className="h-10 w-full rounded-xl border-violet-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-violet-50 sm:w-auto sm:min-w-[145px]"
+              >
+                {saving ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    Saving...
+                  </span>
+                ) : (
+                  "Save changes"
+                )}
+              </Button>
+            </div>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
