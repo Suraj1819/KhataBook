@@ -1209,11 +1209,11 @@ function Bills() {
                         aria-label={`Page ${item}`}
                         aria-current={safePage === item ? "page" : undefined}
                         onClick={() => setPage(item)}
-                        className={`h-8 min-w-8 rounded-full px-0 text-xs font-semibold shadow-sm ${
+                        className={`h-8 min-w-8 rounded-full border px-0 text-xs font-semibold shadow-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:cursor-not-allowed disabled:opacity-50 ${
                           safePage === item
                             ? "border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800"
-                            : "border-violet-200 bg-white/90 text-slate-700 shadow-sm hover:bg-violet-50"
-                        }`} className="rounded-xl border border-violet-200 bg-white/90 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-violet-300 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:cursor-not-allowed disabled:opacity-50">
+                            : "border-violet-200 bg-white/90 text-slate-700 hover:border-violet-300 hover:bg-violet-50"
+                        }`} >
                         {item}
                       </Button>
                     )
