@@ -1560,11 +1560,15 @@ export default function Dashboard() {
             variant="outline"
             onClick={handleRefresh}
             disabled={refreshing}
-            aria-label="Refresh dashboard"
-            title="Refresh dashboard"
-            className="h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+            aria-label={refreshing ? "Refreshing dashboard" : "Refresh dashboard"}
+            title={refreshing ? "Refreshing dashboard" : "Refresh dashboard"}
+            className="h-11 gap-2 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
           >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`h-4 w-4 shrink-0 ${refreshing ? "animate-spin" : ""}`}
+              aria-hidden="true"
+            />
+            <span>{refreshing ? "Refreshing..." : "Refresh"}</span>
           </Button>
 
           <Button

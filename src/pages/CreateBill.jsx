@@ -2252,7 +2252,7 @@ export default function CreateBill() {
                 setDuplicatePromptOpen(false)
                 setAddCustomerOpen(true)
               }}
-              className="h-10 rounded-xl border-violet-200 bg-white px-4"
+              className="h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
             >
               Cancel
             </Button>

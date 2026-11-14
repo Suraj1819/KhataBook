@@ -169,12 +169,15 @@ export function Sidebar({ open, onClose }) {
   const [shopMenuOpen, setShopMenuOpen] = useState(false)
   const [shopMenuPosition, setShopMenuPosition] = useState(null)
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const [profileMenuPosition, setProfileMenuPosition] = useState(null)
   const [loggingOut, setLoggingOut] = useState(false)
 
   const shopMenuRef = useRef(null)
   const shopMenuButtonRef = useRef(null)
   const shopDropdownRef = useRef(null)
   const profileMenuRef = useRef(null)
+  const profileMenuButtonRef = useRef(null)
+  const profileDropdownRef = useRef(null)
 
   const compact = collapsed && !open
   const displayName = profile?.full_name || user?.email?.split("@")[0] || "User"
@@ -187,6 +190,7 @@ export function Sidebar({ open, onClose }) {
         setShopMenuOpen(false)
         setShopMenuPosition(null)
         setProfileMenuOpen(false)
+        setProfileMenuPosition(null)
       } else if (open) {
         onClose?.()
       }
@@ -208,8 +212,12 @@ export function Sidebar({ open, onClose }) {
         setShopMenuPosition(null)
       }
 
-      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
+      const clickedProfileTrigger = profileMenuRef.current?.contains(event.target)
+      const clickedProfileDropdown = profileDropdownRef.current?.contains(event.target)
+
+      if (!clickedProfileTrigger && !clickedProfileDropdown) {
         setProfileMenuOpen(false)
+        setProfileMenuPosition(null)
       }
     }
     document.addEventListener("mousedown", onPointerDown)
@@ -236,6 +244,7 @@ export function Sidebar({ open, onClose }) {
   useEffect(() => {
     setShopMenuOpen(false)
     setProfileMenuOpen(false)
+    setProfileMenuPosition(null)
   }, [pathname])
 
   // Stop the page behind the mobile drawer from scrolling
@@ -294,6 +303,69 @@ export function Sidebar({ open, onClose }) {
       console.error("Could not switch shop:", error)
     }
   }
+
+  function toggleProfileMenu() {
+    setShopMenuOpen(false)
+    setShopMenuPosition(null)
+
+    if (profileMenuOpen) {
+      setProfileMenuOpen(false)
+      setProfileMenuPosition(null)
+      return
+    }
+
+    const trigger = profileMenuButtonRef.current
+    if (!trigger) return
+
+    const rect = trigger.getBoundingClientRect()
+    const viewportPadding = 12
+    const estimatedHeight = Math.min(340, window.innerHeight - viewportPadding * 2)
+
+    if (compact) {
+      const menuWidth = Math.min(240, window.innerWidth - viewportPadding * 2)
+      const left = Math.max(
+        viewportPadding,
+        Math.min(rect.right + 8, window.innerWidth - menuWidth - viewportPadding)
+      )
+      const top = Math.max(
+        viewportPadding,
+        Math.min(rect.top, window.innerHeight - estimatedHeight - viewportPadding)
+      )
+
+      setProfileMenuPosition({ top, left, width: menuWidth, maxHeight: estimatedHeight })
+    } else {
+      const menuWidth = Math.min(280, Math.max(220, rect.width - 24), window.innerWidth - viewportPadding * 2)
+      const left = Math.max(
+        viewportPadding,
+        Math.min(rect.left + (rect.width - menuWidth) / 2, window.innerWidth - menuWidth - viewportPadding)
+      )
+      const top = Math.max(
+        viewportPadding,
+        Math.min(rect.top - estimatedHeight - 8, window.innerHeight - estimatedHeight - viewportPadding)
+      )
+
+      setProfileMenuPosition({ top, left, width: menuWidth, maxHeight: estimatedHeight })
+    }
+
+    setProfileMenuOpen(true)
+  }
+
+  useEffect(() => {
+    if (!profileMenuOpen) return
+
+    const closeOnViewportChange = () => {
+      setProfileMenuOpen(false)
+      setProfileMenuPosition(null)
+    }
+
+    window.addEventListener("resize", closeOnViewportChange)
+    window.addEventListener("scroll", closeOnViewportChange, true)
+
+    return () => {
+      window.removeEventListener("resize", closeOnViewportChange)
+      window.removeEventListener("scroll", closeOnViewportChange, true)
+    }
+  }, [profileMenuOpen])
 
   function toggleCollapsed() {
     setShopMenuOpen(false)
@@ -649,11 +721,9 @@ export function Sidebar({ open, onClose }) {
         {/* ============ USER FOOTER ============ */}
         <div className="relative z-[70] shrink-0 border-t border-slate-100 p-3 dark:border-slate-800" ref={profileMenuRef}>
           <button
+            ref={profileMenuButtonRef}
             type="button"
-            onClick={() => {
-              setProfileMenuOpen((value) => !value)
-              setShopMenuOpen(false)
-            }}
+            onClick={toggleProfileMenu}
             aria-haspopup="menu"
             aria-expanded={profileMenuOpen}
             aria-label={compact ? `Account menu for ${displayName}` : undefined}
@@ -691,14 +761,19 @@ export function Sidebar({ open, onClose }) {
             )}
           </button>
 
-          {profileMenuOpen && (
+          {profileMenuOpen && profileMenuPosition && createPortal(
             <div
+              ref={profileDropdownRef}
               role="menu"
               aria-label="Account menu"
-              className={cn(
-                "absolute z-50 overflow-hidden rounded-xl border border-slate-100 bg-white shadow-xl shadow-slate-200/50 dark:border-slate-700 dark:bg-slate-800 dark:shadow-black/40",
-                compact ? "bottom-2 left-16 w-56" : "bottom-[64px] left-3 right-3"
-              )}
+              style={{
+                position: "fixed",
+                top: profileMenuPosition.top,
+                left: profileMenuPosition.left,
+                width: profileMenuPosition.width,
+                maxHeight: profileMenuPosition.maxHeight,
+              }}
+              className="z-[1100] overflow-y-auto rounded-xl border border-slate-100 bg-white shadow-xl shadow-slate-200/50 dark:border-slate-700 dark:bg-slate-800 dark:shadow-black/40"
             >
               {/* Who is signed in */}
               <div className="border-b border-slate-100 px-3.5 py-3 dark:border-slate-700">
@@ -712,6 +787,7 @@ export function Sidebar({ open, onClose }) {
                   role="menuitem"
                   onClick={() => {
                     setProfileMenuOpen(false)
+                    setProfileMenuPosition(null)
                     if (open) onClose?.()
                   }}
                   className={cn(
@@ -728,6 +804,7 @@ export function Sidebar({ open, onClose }) {
                   role="menuitem"
                   onClick={() => {
                     setProfileMenuOpen(false)
+                    setProfileMenuPosition(null)
                     if (open) onClose?.()
                   }}
                   className={cn(
@@ -792,7 +869,8 @@ export function Sidebar({ open, onClose }) {
                   {loggingOut ? "Logging out..." : "Logout"}
                 </button>
               </div>
-            </div>
+            </div>,
+            document.body
           )}
         </div>
       </aside>
