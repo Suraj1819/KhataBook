@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom"
 import { useShop } from "@/contexts/ShopContext"
 import { supabase } from "@/lib/supabase"
 import { formatCurrency, formatDate, CUSTOMER_TYPES } from "@/lib/utils"
+import { generateCustomersPDF, generateCustomerPDF } from "@/lib/customersPdf"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -1940,9 +1941,36 @@ function CustomersList({ currentShop }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" onClick={exportCsv} disabled={filtered.length === 0} className={`h-11 gap-2 px-4 ${outlineBtn}`}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={exportCsv}
+            disabled={filtered.length === 0}
+            className={`h-11 gap-2 px-4 ${outlineBtn}`}
+          >
             <Download className="h-4 w-4" aria-hidden="true" />
-            Export
+            CSV
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              try {
+                generateCustomersPDF({
+                  customers: filtered,
+                  shop: currentShop,
+                  periodLabel,
+                })
+                toast.success(`Customer PDF exported (${filtered.length} records)`)
+              } catch (error) {
+                toast.error("Could not export customer PDF", { description: error?.message })
+              }
+            }}
+            disabled={filtered.length === 0}
+            className={`h-11 gap-2 px-4 ${outlineBtn}`}
+          >
+            <FileText className="h-4 w-4" aria-hidden="true" />
+            Export PDF
           </Button>
 
           {/* Bills-style date period calendar */}
@@ -2608,6 +2636,50 @@ function CustomerDetails({ currentShop, customerId }) {
     )
   }, [customer, calc.totalOutstanding, calc.overdueAmount, currentShop.name])
 
+  async function exportCustomerPdf() {
+    if (!customer) return
+
+    try {
+      let billItems = {}
+      const billIds = bills.map((bill) => bill.id).filter(Boolean)
+
+      if (billIds.length) {
+        const { data, error } = await supabase
+          .from("bill_items")
+          .select("*")
+          .in("bill_id", billIds)
+          .order("sort_order", { ascending: true })
+
+        if (error) throw error
+
+        billItems = (data || []).reduce((result, item) => {
+          if (!result[item.bill_id]) result[item.bill_id] = []
+          result[item.bill_id].push(item)
+          return result
+        }, {})
+      }
+
+      generateCustomerPDF({
+        customer,
+        bills,
+        payments,
+        advances,
+        statement,
+        calc,
+        shop: currentShop,
+        periodLabel,
+        itemsByBill: billItems,
+      })
+
+      toast.success("Customer account PDF exported")
+    } catch (error) {
+      console.error("Customer PDF export error:", error)
+      toast.error("Could not export customer PDF", {
+        description: error?.message || "Please try again.",
+      })
+    }
+  }
+
   function exportStatement() {
     const header = ["Date", "Description", "Reference", "Debit", "Credit", "Balance"]
     const body = statement.asc.map((row) => [
@@ -2710,6 +2782,16 @@ function CustomerDetails({ currentShop, customerId }) {
 
         <div className="flex flex-wrap items-center gap-2">
           <PeriodMenu period={period} onChange={setPeriod} range={range} label={periodLabel} today={today} />
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={exportCustomerPdf}
+            className={`h-11 gap-2 px-4 ${outlineBtn}`}
+          >
+            <FileText className="h-4 w-4" aria-hidden="true" />
+            Customer PDF
+          </Button>
 
           {hasMobile && (
             <Button asChild variant="outline" className={`h-11 gap-2 px-4 ${outlineBtn}`}>

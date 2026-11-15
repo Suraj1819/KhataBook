@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom"
 import { useShop } from "@/contexts/ShopContext"
 import { supabase } from "@/lib/supabase"
 import { formatCurrency, formatDate } from "@/lib/utils"
+import { generateCustomerDetailsPDF } from "@/lib/customerDetailsPdf"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,6 +20,8 @@ import {
   ChevronDown,
   ChevronRight,
   CircleAlert,
+  FileDown,
+  FileSpreadsheet,
   Clock3,
   CreditCard,
   FileText,
@@ -88,6 +91,20 @@ function getInitials(name) {
       .join("")
       .toUpperCase() || "?"
   )
+}
+
+function getCustomerPhotoUrl(photoValue) {
+  const value = String(photoValue || "").trim()
+  if (!value) return ""
+
+  if (/^(https?:|data:|blob:)/i.test(value)) return value
+
+  const cleanPath = value
+    .replace(/^\/+/, "")
+    .replace(/^avatars\//, "")
+
+  const { data } = supabase.storage.from("avatars").getPublicUrl(cleanPath)
+  return data?.publicUrl || ""
 }
 
 function getPaymentStatus(bill) {
@@ -177,7 +194,7 @@ function SectionHeader({ icon: Icon, title, description, action }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-[#eae7f4] px-5 py-4">
       <div className="flex min-w-0 items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-50 text-violet-700">
           <Icon className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
         </div>
 
@@ -290,6 +307,7 @@ export default function CustomerDetails() {
 
   const [search, setSearch] = useState("")
   const [billFilter, setBillFilter] = useState("all")
+  const [billDateFilter, setBillDateFilter] = useState("")
   const [activeTab, setActiveTab] = useState("bills")
   const [expandedBill, setExpandedBill] = useState(null)
 
@@ -301,6 +319,8 @@ export default function CustomerDetails() {
 
   // Reset when the customer or shop changes
   useEffect(() => {
+    // Invalidate requests belonging to the previous customer/workspace.
+    requestRef.current += 1
     hasLoaded.current = false
     setCustomer(null)
     setBills([])
@@ -314,7 +334,11 @@ export default function CustomerDetails() {
 
   const loadCustomerDetails = useCallback(
     async (showRefresh = false) => {
-      if (!currentShop?.id || !customerId) return
+      if (!currentShop?.id || !customerId) {
+        setLoading(false)
+        setRefreshing(false)
+        return
+      }
 
       const requestId = ++requestRef.current
 
@@ -413,17 +437,21 @@ export default function CustomerDetails() {
     const totalPurchase = sum(bills, "grand_total")
     const totalDue = sum(bills, "amount_due")
 
-    const grossReceived = sum(
-      payments.filter((p) => !p.is_refund),
+    const totalAdvanceReceived = sum(advances, "amount")
+
+    // Regular payments are counted from payments. Advance deposits are counted
+    // from customer_advances so mirrored is_advance payment rows are not counted twice.
+    const regularPaymentsReceived = sum(
+      payments.filter((p) => !p.is_refund && !p.is_advance),
       "amount"
     )
     const totalRefunded = sum(
       payments.filter((p) => p.is_refund),
       "amount"
     )
+    const grossReceived = regularPaymentsReceived + totalAdvanceReceived
     const totalReceived = Math.max(0, grossReceived - totalRefunded)
 
-    const totalAdvanceReceived = sum(advances, "amount")
     const availableAdvance = sum(advances, "remaining_amount")
     const advanceAdjusted = Math.max(0, totalAdvanceReceived - availableAdvance)
 
@@ -488,6 +516,7 @@ export default function CustomerDetails() {
 
     return bills.filter((bill) => {
       if (query && !bill.bill_number?.toLowerCase().includes(query)) return false
+      if (billDateFilter && bill.bill_date !== billDateFilter) return false
 
       if (billFilter === "all") return true
       if (billFilter === "overdue") {
@@ -495,7 +524,7 @@ export default function CustomerDetails() {
       }
       return getPaymentStatus(bill) === billFilter
     })
-  }, [bills, search, billFilter, today])
+  }, [bills, search, billFilter, billDateFilter, today])
 
   // Ledger: debit = customer owes more, credit = customer owes less
   const statement = useMemo(() => {
@@ -565,6 +594,188 @@ export default function CustomerDetails() {
 
   const handleRefresh = () => loadCustomerDetails(true)
 
+  const handleExportCustomerPdf = () => {
+    if (!customer) {
+      toast.error("Customer details are not available.")
+      return
+    }
+
+    try {
+      generateCustomerDetailsPDF({
+        customer,
+        bills,
+        payments,
+        advances,
+        billItems,
+        calc,
+        statement,
+        shop: currentShop,
+        periodLabel: "All time",
+      })
+      toast.success("Customer details PDF downloaded.")
+    } catch (error) {
+      console.error("Customer details PDF error:", error)
+      toast.error("Could not generate customer PDF", {
+        description: error?.message || "Please try again.",
+      })
+    }
+  }
+
+  const handleExportBillsCsv = () => {
+    if (!filteredBills.length) {
+      toast.error("No bills to export", { description: "Adjust your search or filters and try again." })
+      return
+    }
+
+    const columns = [
+      ["Bill Number", "bill_number"],
+      ["Bill Date", "bill_date"],
+      ["Due Date", "due_date"],
+      ["Status", "status"],
+      ["Subtotal", "subtotal"],
+      ["Discount", "discount_amount"],
+      ["GST", "total_gst"],
+      ["Grand Total", "grand_total"],
+      ["Amount Paid", "amount_paid"],
+      ["Advance Adjusted", "advance_adjusted"],
+      ["Amount Due", "amount_due"],
+      ["Notes", "notes"],
+    ]
+
+    const escapeCsv = (value) => {
+      const text = String(value ?? "")
+      return `"${text.replace(/"/g, '""')}"`
+    }
+
+    const rows = [
+      columns.map(([label]) => escapeCsv(label)).join(","),
+      ...filteredBills.map((bill) =>
+        columns.map(([, key]) => {
+          const value = key === "status"
+            ? (num(bill.amount_due) <= 0
+                ? "Paid"
+                : num(bill.amount_paid) > 0 || num(bill.advance_adjusted) > 0
+                  ? "Partial"
+                  : "Unpaid")
+            : bill[key]
+          return escapeCsv(value)
+        }).join(",")
+      ),
+    ]
+
+    const csv = "\uFEFF" + rows.join("\r\n")
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    const dateSuffix = billDateFilter || localDateString()
+    link.href = url
+    link.download = `bills-${String(customer.name || "customer").trim().replace(/[^a-z0-9-_]+/gi, "-")}-${dateSuffix}.csv`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+    toast.success(`${filteredBills.length} bills exported to CSV`)
+  }
+
+  const handleExportBillsPdf = () => {
+    if (!filteredBills.length) {
+      toast.error("No bills to export", { description: "Adjust your search or filters and try again." })
+      return
+    }
+
+    const popup = window.open("", "_blank")
+    if (!popup) {
+      toast.error("PDF export blocked", {
+        description: "Allow pop-ups for this site, then try exporting again.",
+      })
+      return
+    }
+
+    popup.opener = null
+
+    const escapeHtml = (value) =>
+      String(value ?? "").replace(/[&<>"']/g, (character) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[character])
+
+    const money = (value) => formatCurrency(num(value))
+    const rows = filteredBills.map((bill) => {
+      const status = num(bill.amount_due) <= 0
+        ? "Paid"
+        : num(bill.amount_paid) > 0 || num(bill.advance_adjusted) > 0
+          ? "Partial"
+          : "Unpaid"
+      return `
+        <tr>
+          <td>${escapeHtml(bill.bill_number)}</td>
+          <td>${escapeHtml(bill.bill_date ? formatDate(bill.bill_date) : "—")}</td>
+          <td>${escapeHtml(bill.due_date ? formatDate(bill.due_date) : "—")}</td>
+          <td>${status}</td>
+          <td class="number">${escapeHtml(money(bill.grand_total))}</td>
+          <td class="number">${escapeHtml(money(bill.amount_paid))}</td>
+          <td class="number">${escapeHtml(money(bill.amount_due))}</td>
+        </tr>`
+    }).join("")
+
+    const total = filteredBills.reduce((sum, bill) => sum + num(bill.grand_total), 0)
+    const paid = filteredBills.reduce((sum, bill) => sum + num(bill.amount_paid) + num(bill.advance_adjusted), 0)
+    const due = filteredBills.reduce((sum, bill) => sum + num(bill.amount_due), 0)
+    const filterLabel = billDateFilter ? formatDate(billDateFilter) : "All dates"
+
+    popup.document.write(`<!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Customer Bills - ${escapeHtml(customer.name)}</title>
+          <style>
+            * { box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; color: #1e293b; padding: 28px; }
+            h1 { margin: 0 0 6px; font-size: 22px; }
+            .meta { color: #64748b; font-size: 12px; margin-bottom: 22px; }
+            .stats { display: flex; gap: 12px; margin-bottom: 20px; }
+            .stat { flex: 1; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; }
+            .stat span { display: block; color: #64748b; font-size: 11px; }
+            .stat strong { display: block; margin-top: 5px; font-size: 15px; }
+            table { width: 100%; border-collapse: collapse; font-size: 11px; }
+            th, td { border: 1px solid #e2e8f0; padding: 9px 7px; text-align: left; }
+            th { background: #f5f3fc; }
+            .number { text-align: right; white-space: nowrap; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>
+          <h1>Customer Bills</h1>
+          <div class="meta">
+            Customer: ${escapeHtml(customer.name)} · Date filter: ${escapeHtml(filterLabel)}
+            · Generated: ${escapeHtml(formatDate(localDateString()))}
+          </div>
+          <div class="stats">
+            <div class="stat"><span>Total bills</span><strong>${filteredBills.length}</strong></div>
+            <div class="stat"><span>Grand total</span><strong>${escapeHtml(money(total))}</strong></div>
+            <div class="stat"><span>Paid</span><strong>${escapeHtml(money(paid))}</strong></div>
+            <div class="stat"><span>Due</span><strong>${escapeHtml(money(due))}</strong></div>
+          </div>
+          <table>
+            <thead><tr>
+              <th>Bill No.</th><th>Bill Date</th><th>Due Date</th><th>Status</th>
+              <th class="number">Total</th><th class="number">Paid</th><th class="number">Due</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <script>
+            window.onload = () => {
+              window.print()
+            }
+          </script>
+        </body>
+      </html>`)
+    popup.document.close()
+  }
+
   const reminderLink = useMemo(() => {
     if (!customer || calc.totalDue <= 0) return null
     const text =
@@ -583,7 +794,7 @@ export default function CustomerDetails() {
     return (
       <div className="flex min-h-[400px] items-center justify-center rounded-3xl border border-dashed border-violet-200 bg-white/80 p-8 text-center">
         <div className="max-w-sm">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-50 text-violet-700">
             <UserRound className="h-7 w-7" aria-hidden="true" />
           </div>
           <h2 className="mt-4 text-lg font-bold text-slate-900">No workspace selected</h2>
@@ -624,7 +835,7 @@ export default function CustomerDetails() {
                 Try again
               </Button>
             )}
-            <Button asChild className="rounded-xl bg-emerald-700 hover:bg-emerald-800">
+            <Button asChild className="rounded-xl border border-violet-200 bg-white text-slate-700 shadow-sm hover:bg-violet-50 hover:text-violet-800">
               <Link to="/customers">
                 <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
                 Back to customers
@@ -641,6 +852,7 @@ export default function CustomerDetails() {
     .join(", ")
 
   const customerSince = customer.created_at ? formatDate(customer.created_at.split("T")[0]) : ""
+  const customerPhotoUrl = getCustomerPhotoUrl(customer.photo_url)
 
   /* --------------------------------------------------
      MAIN UI
@@ -649,15 +861,15 @@ export default function CustomerDetails() {
   return (
     <div className="min-h-full w-full space-y-4 rounded-2xl bg-[#f7f5ff] px-3 py-5 sm:px-5 lg:px-6">
       {/* PAGE HEADER */}
-
-      <header className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-        <div className="flex min-w-0 items-center gap-4">
+      <header className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        {/* Customer identity */}
+        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <Button
             asChild
             variant="outline"
             size="icon"
             aria-label="Back to customers"
-            className="h-11 w-11 shrink-0 rounded-xl border-violet-200 bg-white/90 shadow-sm hover:bg-violet-50"
+            className="h-10 w-10 shrink-0 rounded-xl border-violet-200 bg-white/90 shadow-sm hover:bg-violet-50 sm:h-11 sm:w-11"
           >
             <Link to="/customers">
               <ArrowLeft className="h-4 w-4" />
@@ -665,31 +877,43 @@ export default function CustomerDetails() {
           </Button>
 
           <div
-            aria-hidden="true"
-            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-violet-100 text-lg font-bold text-violet-700"
+            className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-violet-200 bg-violet-100 text-base font-bold text-violet-700 shadow-sm sm:h-14 sm:w-14 sm:text-lg"
+            aria-label={`${customer.name} profile photo`}
           >
-            {getInitials(customer.name)}
+            <span aria-hidden="true">{getInitials(customer.name)}</span>
+            {customerPhotoUrl && (
+              <img
+                src={customerPhotoUrl}
+                alt={`${customer.name} profile`}
+                loading="lazy"
+                referrerPolicy="no-referrer"
+                className="absolute inset-0 h-full w-full rounded-full object-cover"
+                onError={(event) => {
+                  event.currentTarget.style.display = "none"
+                }}
+              />
+            )}
           </div>
 
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <nav
               aria-label="Breadcrumb"
-              className="flex items-center gap-2 text-xs font-medium text-slate-500"
+              className="mb-1 hidden min-w-0 items-center gap-1.5 overflow-hidden text-xs font-medium text-slate-500 sm:flex"
             >
-              <span>{currentShop.name || "Workspace"}</span>
-              <ChevronRight className="h-3 w-3" aria-hidden="true" />
-              <Link to="/customers" className="transition-colors hover:text-slate-800">
+              <span className="max-w-[120px] truncate">{currentShop.name || "Workspace"}</span>
+              <ChevronRight className="h-3 w-3 shrink-0" aria-hidden="true" />
+              <Link to="/customers" className="shrink-0 transition-colors hover:text-slate-800">
                 Customers
               </Link>
-              <ChevronRight className="h-3 w-3" aria-hidden="true" />
+              <ChevronRight className="h-3 w-3 shrink-0" aria-hidden="true" />
               <span className="truncate">{customer.name}</span>
             </nav>
 
-            <h1 className="mt-1 truncate text-[26px] font-bold tracking-tight text-[#171a39] sm:text-[30px]">
+            <h1 className="truncate text-xl font-bold leading-tight tracking-tight text-[#171a39] sm:text-[30px]">
               {customer.name}
             </h1>
 
-            <p className="mt-0.5 text-sm text-slate-600">
+            <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600 sm:text-sm">
               {calc.totalDue > 0 ? (
                 <>
                   Owes{" "}
@@ -706,15 +930,16 @@ export default function CustomerDetails() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Actions: compact grid on mobile, single row on desktop */}
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center lg:w-auto lg:justify-end">
           {customer.mobile && (
             <Button
               asChild
               variant="outline"
-              className="h-11 gap-2 rounded-xl border-violet-200 bg-white/90 px-4 text-slate-700 shadow-sm hover:bg-violet-50"
+              className="h-10 w-full gap-2 rounded-xl border-violet-200 bg-white/90 px-3 text-sm text-slate-700 shadow-sm hover:bg-violet-50 sm:h-11 sm:w-auto sm:px-4"
             >
               <a href={`tel:${customer.mobile}`}>
-                <Phone className="h-4 w-4" aria-hidden="true" />
+                <Phone className="h-4 w-4 shrink-0" aria-hidden="true" />
                 Call
               </a>
             </Button>
@@ -724,11 +949,11 @@ export default function CustomerDetails() {
             <Button
               asChild
               variant="outline"
-              className="h-11 gap-2 rounded-xl border-emerald-200 bg-emerald-50 px-4 text-emerald-800 shadow-sm hover:bg-emerald-100"
+              className="h-10 w-full gap-2 rounded-xl border-violet-200 bg-white px-2.5 text-xs text-slate-700 shadow-sm hover:bg-violet-50 hover:text-violet-800 sm:h-11 sm:w-auto sm:px-4 sm:text-sm"
             >
               <a href={reminderLink} target="_blank" rel="noopener noreferrer">
-                <MessageCircle className="h-4 w-4" aria-hidden="true" />
-                Send reminder
+                <MessageCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span className="truncate">Send reminder</span>
               </a>
             </Button>
           )}
@@ -736,21 +961,32 @@ export default function CustomerDetails() {
           <Button
             type="button"
             variant="outline"
+            onClick={handleExportCustomerPdf}
+            className="h-10 w-full gap-2 rounded-xl border-violet-200 bg-white px-3 text-sm text-slate-700 shadow-sm hover:bg-violet-50 hover:text-violet-800 sm:h-11 sm:w-auto sm:px-4"
+          >
+            <FileDown className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>Customer PDF</span>
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
             onClick={handleRefresh}
             disabled={refreshing}
-            aria-label="Refresh customer"
-            title="Refresh"
-            className="h-11 rounded-xl border-violet-100 bg-white px-3 shadow-sm hover:bg-violet-50"
+            aria-label={refreshing ? "Refreshing customer details" : "Refresh customer"}
+            title={refreshing ? "Refreshing..." : "Refresh"}
+            className="h-10 w-full gap-2 rounded-xl border-violet-100 bg-white px-3 text-sm text-slate-700 shadow-sm hover:bg-violet-50 hover:text-violet-800 disabled:cursor-not-allowed disabled:opacity-70 sm:h-11 sm:w-auto sm:px-4"
           >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+            <RefreshCw className={`h-4 w-4 shrink-0 ${refreshing ? "animate-spin" : ""}`} />
+            <span>{refreshing ? "Refreshing..." : "Refresh"}</span>
           </Button>
 
           <Button
             asChild
-            className="h-11 gap-2 rounded-xl bg-emerald-700 px-5 text-white shadow-sm hover:bg-emerald-800"
+            className="h-10 w-full gap-2 rounded-xl border border-violet-200 bg-white px-3 text-sm text-slate-700 shadow-sm hover:bg-violet-50 hover:text-violet-800 sm:h-11 sm:w-auto sm:px-5"
           >
             <Link to="/bills/new">
-              <Plus className="h-5 w-5" aria-hidden="true" />
+              <Plus className="h-5 w-5 shrink-0" aria-hidden="true" />
               Create bill
             </Link>
           </Button>
@@ -854,9 +1090,9 @@ export default function CustomerDetails() {
                   role="tab"
                   aria-selected={active}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex shrink-0 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${
+                  className={`flex shrink-0 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${
                     active
-                      ? "bg-emerald-700 text-white shadow-sm"
+                      ? "bg-violet-100 text-violet-800 shadow-sm ring-1 ring-violet-200"
                       : "text-slate-600 hover:bg-violet-50 hover:text-slate-900"
                   }`}
                 >
@@ -865,7 +1101,7 @@ export default function CustomerDetails() {
                   {count !== null && (
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                        active ? "bg-white/20 text-white" : "bg-violet-100 text-violet-700"
+                        active ? "bg-white text-violet-700" : "bg-violet-100 text-violet-700"
                       }`}
                     >
                       {count}
@@ -887,18 +1123,44 @@ export default function CustomerDetails() {
               />
 
               <div className="space-y-3 border-b border-[#eeecf5] p-4 sm:px-5">
-                <div className="relative">
-                  <Search
-                    className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
-                    aria-hidden="true"
-                  />
-                  <Input
-                    placeholder="Search bill number…"
-                    aria-label="Search bill number"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    className="h-11 rounded-xl border-violet-100 bg-white pl-10 text-sm shadow-none focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/20"
-                  />
+                {/* Search + exports: use the available horizontal space beside search */}
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <div className="relative min-w-0 flex-1">
+                    <Search
+                      className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                      aria-hidden="true"
+                    />
+                    <Input
+                      placeholder="Search bill number…"
+                      aria-label="Search bill number"
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      className="h-11 w-full rounded-xl border-violet-100 bg-white pl-10 text-sm shadow-none focus-visible:border-violet-400 focus-visible:ring-2 focus-visible:ring-violet-500/20"
+                    />
+                  </div>
+
+                  <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleExportBillsCsv}
+                      disabled={filteredBills.length === 0}
+                      className="h-11 flex-1 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50 disabled:opacity-50 sm:flex-none"
+                    >
+                      <FileSpreadsheet className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                      Export CSV
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleExportBillsPdf}
+                      disabled={filteredBills.length === 0}
+                      className="h-11 flex-1 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50 disabled:opacity-50 sm:flex-none"
+                    >
+                      <FileDown className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                      Export PDF
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
@@ -910,9 +1172,9 @@ export default function CustomerDetails() {
                         type="button"
                         onClick={() => setBillFilter(filter.id)}
                         aria-pressed={active}
-                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${
                           active
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                            ? "border-violet-200 bg-violet-50 text-violet-800"
                             : "border-violet-100 bg-white text-slate-600 hover:bg-violet-50"
                         }`}
                       >
@@ -921,6 +1183,42 @@ export default function CustomerDetails() {
                       </button>
                     )
                   })}
+                </div>
+
+                <div className="flex flex-col gap-2 border-t border-[#eeecf5] pt-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div className="min-w-[180px] flex-1 sm:flex-none">
+                      <label htmlFor="customer-bill-date" className="mb-1.5 block text-xs font-semibold text-slate-600">
+                        Filter by bill date
+                      </label>
+                      <Input
+                        id="customer-bill-date"
+                        type="date"
+                        value={billDateFilter}
+                        onChange={(event) => setBillDateFilter(event.target.value)}
+                        className="h-10 rounded-xl border-violet-100 bg-white text-sm shadow-none focus-visible:border-violet-400 focus-visible:ring-2 focus-visible:ring-violet-500/20"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setBillDateFilter(today)}
+                      className="h-10 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50"
+                    >
+                      <CalendarDays className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                      Today
+                    </Button>
+                    {billDateFilter && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setBillDateFilter("")}
+                        className="h-10 rounded-xl px-3 text-xs font-semibold text-slate-600 hover:bg-violet-50"
+                      >
+                        Clear date
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -948,11 +1246,20 @@ export default function CustomerDetails() {
 
                     return (
                       <div key={bill.id}>
-                        <button
-                          type="button"
-                          aria-expanded={isExpanded}
+                        <div
+                          role="button"
+                          tabIndex={0}
                           onClick={() => setExpandedBill(isExpanded ? null : bill.id)}
-                          className="w-full p-4 text-left transition-colors hover:bg-[#f9f8ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-600 sm:px-5"
+                          onKeyDown={(event) => {
+                            if (event.target.closest("a")) return
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault()
+                              setExpandedBill(isExpanded ? null : bill.id)
+                            }
+                          }}
+                          aria-expanded={isExpanded}
+                          aria-label={`${isExpanded ? "Collapse" : "Expand"} bill ${bill.bill_number}`}
+                          className="block w-full cursor-pointer p-4 text-left transition-colors hover:bg-[#f9f8ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500 sm:px-5"
                         >
                           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                             <div className="flex min-w-0 items-start gap-3">
@@ -962,9 +1269,14 @@ export default function CustomerDetails() {
 
                               <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <p className="text-sm font-bold text-slate-900">
+                                  <Link
+                                    to={`/bills/${bill.id}`}
+                                    onClick={(event) => event.stopPropagation()}
+                                    aria-label={`Open full invoice ${bill.bill_number}`}
+                                    className="text-sm font-bold text-slate-900 underline-offset-2 transition-colors hover:text-violet-700 hover:underline focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                                  >
                                     {bill.bill_number}
-                                  </p>
+                                  </Link>
                                   <StatusPill status={status} />
                                   {overdue && <StatusPill status="overdue" />}
                                 </div>
@@ -1017,14 +1329,12 @@ export default function CustomerDetails() {
                               </div>
 
                               <ChevronDown
-                                className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${
-                                  isExpanded ? "rotate-180" : ""
-                                }`}
+                                className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
                                 aria-hidden="true"
                               />
                             </div>
                           </div>
-                        </button>
+                        </div>
 
                         {isExpanded && (
                           <div className="space-y-4 border-t border-[#eeecf5] bg-[#faf9ff] p-4 sm:p-5">

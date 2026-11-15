@@ -495,12 +495,12 @@ function DashboardSkeleton() {
         <Skeleton className="h-14 w-14 rounded-full" />
         <Skeleton className="h-16 w-72" />
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 2xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} className="h-[124px] rounded-[20px]" />
         ))}
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 2xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} className="h-[76px] rounded-[18px]" />
         ))}
@@ -609,14 +609,14 @@ function CompactStat({ label, value, icon: Icon, tone = "purple", detail }) {
 
 function SectionHeader({ icon: Icon, title, description, action }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-[#eae7f4] px-5 py-4">
+    <div className="flex min-w-0 flex-col items-stretch gap-3 border-b border-[#eae7f4] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5 [&>button]:w-full sm:[&>button]:w-auto">
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
           <Icon className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
         </div>
 
         <div className="min-w-0">
-          <h2 className="text-[16px] font-bold tracking-tight text-[#171a36]">{title}</h2>
+          <h2 className="break-words text-[16px] font-bold tracking-tight text-[#171a36]">{title}</h2>
           <p className="mt-0.5 text-xs text-slate-500">{description}</p>
         </div>
       </div>
@@ -1410,10 +1410,10 @@ export default function Dashboard() {
   -------------------------------------------------- */
 
   return (
-    <div className="min-h-full w-full space-y-4 rounded-2xl bg-[#f7f5ff] px-3 py-5 sm:px-5 lg:px-6">
+    <div className="min-h-full w-full min-w-0 space-y-4 overflow-x-hidden rounded-2xl bg-[#f7f5ff] px-3 py-4 sm:px-5 sm:py-5 xl:px-6">
       {/* PAGE HEADER */}
 
-      <header className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+      <header className="flex min-w-0 flex-col justify-between gap-4 xl:flex-row xl:items-center">
         <div className="flex min-w-0 items-center gap-4">
           <Link
             to="/settings"
@@ -1450,8 +1450,8 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div ref={periodRef} className="relative w-full sm:w-auto">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+          <div ref={periodRef} className="relative col-span-2 w-full sm:col-span-1 sm:w-auto">
             <button
               type="button"
               aria-haspopup="menu"
@@ -1473,14 +1473,14 @@ export default function Dashboard() {
               <>
                 {/* Dim background on mobile; tap it to close */}
                 <div
-                  className="fixed inset-0 z-40 bg-slate-900/30 sm:hidden"
+                  className="fixed inset-0 z-40 bg-slate-900/35 lg:hidden"
                   onClick={() => setPeriodOpen(false)}
                   aria-hidden="true"
                 />
                 <div
                   role="menu"
                   aria-label="Choose period"
-                  className="fixed inset-x-3 bottom-3 z-50 max-h-[85vh] overflow-y-auto rounded-2xl border border-violet-100 bg-white p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-[0_12px_32px_rgba(80,65,130,0.25)] sm:absolute sm:inset-x-auto sm:bottom-auto sm:right-0 sm:top-[calc(100%+8px)] sm:z-30 sm:max-h-none sm:w-[290px] sm:overflow-visible sm:pb-2"
+                  className="fixed inset-x-3 bottom-3 z-50 mx-auto max-h-[min(82dvh,620px)] w-auto max-w-[520px] overflow-y-auto overscroll-contain rounded-2xl border border-violet-100 bg-white p-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_16px_40px_rgba(80,65,130,0.28)] lg:absolute lg:inset-x-auto lg:bottom-auto lg:right-0 lg:top-[calc(100%+8px)] lg:z-30 lg:max-h-[min(80vh,620px)] lg:w-[320px] lg:max-w-[calc(100vw-2rem)] lg:overflow-y-auto lg:pb-2"
                 >
                   {[...PRESETS, { mode: "overall", label: "Overall (all time)" }].map((option) => {
                     const active = period.mode === option.mode
@@ -1545,7 +1545,7 @@ export default function Dashboard() {
                     <Button
                       type="button"
                       onClick={() => setPeriodOpen(false)}
-                      className="mt-3 w-full h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+                      className="mt-3 h-11 w-full rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
                     >
                       Done
                     </Button>
@@ -1562,7 +1562,7 @@ export default function Dashboard() {
             disabled={refreshing}
             aria-label={refreshing ? "Refreshing dashboard" : "Refresh dashboard"}
             title={refreshing ? "Refreshing dashboard" : "Refresh dashboard"}
-            className="h-11 gap-2 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+            className="h-11 w-full justify-center gap-2 rounded-xl border border-violet-200 bg-white/90 px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50 sm:w-auto sm:px-4"
           >
             <RefreshCw
               className={`h-4 w-4 shrink-0 ${refreshing ? "animate-spin" : ""}`}
@@ -1574,7 +1574,7 @@ export default function Dashboard() {
           <Button
             asChild
             variant="outline"
-            className="gap-2 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+            className="h-11 w-full justify-center gap-2 rounded-xl border border-violet-200 bg-white/90 px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50 sm:w-auto sm:px-4"
           >
             <Link to="/bills">
               <Receipt className="h-4 w-4" aria-hidden="true" />
@@ -1584,7 +1584,7 @@ export default function Dashboard() {
 
           <Button
             asChild
-            className="gap-2 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+            className="h-11 w-full justify-center gap-2 rounded-xl border border-violet-200 bg-white/90 px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50 sm:w-auto sm:px-4"
           >
             <Link to="/bills/new">
               <Plus className="h-5 w-5" aria-hidden="true" />
@@ -1599,9 +1599,9 @@ export default function Dashboard() {
       {loadError && (
         <div
           role="alert"
-          className="flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3"
+          className="flex flex-col items-stretch justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 sm:flex-row sm:items-center"
         >
-          <div className="flex items-center gap-2 text-sm text-rose-700">
+          <div className="flex min-w-0 items-start gap-2 text-sm text-rose-700">
             <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span>
               Could not load your latest figures. Check your connection and try again.
@@ -1613,7 +1613,7 @@ export default function Dashboard() {
             size="sm"
             variant="outline"
             onClick={() => loadDashboard()}
-            className="shrink-0 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+            className="h-11 w-full shrink-0 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50 sm:w-auto"
           >
             Try again
           </Button>
@@ -1650,7 +1650,7 @@ export default function Dashboard() {
 
       <section
         aria-label="Financial overview"
-        className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4"
+        className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 2xl:grid-cols-4"
       >
         <SummaryCard
           label={`Sales (${shortLabel})`}
@@ -1703,7 +1703,7 @@ export default function Dashboard() {
 
       <section
         aria-label="Business statistics"
-        className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4"
+        className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 2xl:grid-cols-4"
       >
         <CompactStat
           label="Active customers"
@@ -1738,7 +1738,7 @@ export default function Dashboard() {
 
       {/* MAIN CONTENT */}
 
-      <section className="grid grid-cols-1 items-start gap-4 2xl:grid-cols-[1.65fr_1fr]">
+      <section className="grid min-w-0 grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(300px,1fr)] 2xl:gap-5">
         <div className="min-w-0 space-y-4">
           {/* SALES TREND */}
 
@@ -1779,7 +1779,7 @@ export default function Dashboard() {
               />
             ) : (
               <CardContent className="space-y-4 p-4 sm:p-5">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="grid min-w-0 grid-cols-1 gap-3 min-[480px]:grid-cols-2 xl:grid-cols-3">
                   <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3">
                     <p className="text-[11px] font-semibold text-emerald-800">Total sales</p>
                     <p className="mt-1 text-lg font-bold tabular-nums text-slate-900">
@@ -2048,7 +2048,7 @@ export default function Dashboard() {
               }
             />
 
-            <div className="grid grid-cols-1 gap-4 p-4 sm:p-5">
+            <div className="grid min-w-0 grid-cols-1 gap-4 p-3 sm:p-5">
               {/* COLLECTION RATE */}
               <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 sm:p-5">
                 <div className="flex items-start justify-between gap-3">
@@ -2146,7 +2146,7 @@ export default function Dashboard() {
           <Card className={cardClass}>
             <SectionHeader icon={Zap} title="Quick actions" description="Jump straight to common tasks." />
 
-            <CardContent className="grid grid-cols-1 gap-2.5 p-4 sm:grid-cols-2">
+            <CardContent className="grid grid-cols-1 gap-2.5 p-3 sm:grid-cols-2 sm:p-4">
               <QuickAction
                 title="Create bill"
                 description="Make a new bill"
@@ -2385,7 +2385,7 @@ export default function Dashboard() {
                         />
 
                         <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
+                          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
                             <p className="truncate text-sm font-bold text-slate-800">{customer.name}</p>
                             {index === 0 && (
                               <span className="shrink-0 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-600">

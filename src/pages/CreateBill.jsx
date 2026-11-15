@@ -61,6 +61,7 @@ import {
   Upload,
   UserRound,
   Wallet,
+  MessageCircle,
   X,
 } from "lucide-react"
 
@@ -410,6 +411,7 @@ export default function CreateBill() {
   const offlineBillCameraRef = useRef(null)
 
   const [saving, setSaving] = useState(false)
+  const [createdBillShare, setCreatedBillShare] = useState(null)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [loadingCustomers, setLoadingCustomers] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -1072,6 +1074,23 @@ export default function CreateBill() {
     setAdvanceUsed(String(roundToTwo(Math.min(advanceAvailable, calculated.grandTotal))))
   }
 
+  function getWhatsAppNumber(customer) {
+    const raw = String(customer?.whatsapp || customer?.mobile || "").trim()
+    if (!raw) return ""
+    let digits = raw.replace(/\D/g, "")
+    if (digits.length === 10) digits = `91${digits}`
+    return digits
+  }
+
+  function openWhatsAppDraft() {
+    if (!createdBillShare?.phone) {
+      toast.error("Customer WhatsApp number is not available")
+      return
+    }
+    const url = `https://wa.me/${createdBillShare.phone}?text=${encodeURIComponent(createdBillShare.message)}`
+    window.open(url, "_blank", "noopener,noreferrer")
+  }
+
   /* --------------------------------------------------
      SUBMIT
   -------------------------------------------------- */
@@ -1149,6 +1168,14 @@ export default function CreateBill() {
 
   async function confirmCreateBill() {
     if (saving) return
+
+    // Rebuild the valid item list inside this function's scope.
+    // handleSubmit has its own local validItems variable, which is not
+    // available here after the review dialog is confirmed.
+    const validItems = items
+      .map((item, index) => ({ ...item, originalIndex: index }))
+      .filter((item) => item.item_name.trim())
+
     setReviewOpen(false)
     setSaving(true)
     let createdBillId = null
@@ -1290,8 +1317,89 @@ export default function CreateBill() {
         }
       }
 
+      const customerForMessage = selectedCustomer || customers.find((customer) => customer.id === customerId)
+      const whatsappPhone = getWhatsAppNumber(customerForMessage)
+
+      const separator = "━━━━━━━━━━━━━━━━━━"
+      const shopAddress = [
+        currentShop.address,
+        currentShop.city,
+        currentShop.state,
+        currentShop.pincode ? `PIN - ${currentShop.pincode}` : "",
+      ].filter(Boolean).join(", ")
+      const customerAddress = [
+        customerForMessage?.address,
+        customerForMessage?.city,
+        customerForMessage?.state,
+        customerForMessage?.pincode ? `PIN - ${customerForMessage.pincode}` : "",
+      ].filter(Boolean).join(", ")
+
+      const itemLines = validItems.map((item, index) => {
+        const calc = calculated.itemCalcs[item.originalIndex]
+        const quantity = `${calc.quantity} ${item.unit || ""}`.trim()
+        return [
+          `${index + 1}. ${item.item_name.trim()}`,
+          `   Qty: ${quantity} | Rate: ${formatCurrency(calc.rate)} | Discount: ${formatCurrency(calc.discount)} | GST: ${calc.gstPercent}% | Amount: ${formatCurrency(calc.totalAmount)}`,
+        ].join("\\n")
+      })
+
+      const paymentLines = calculated.amountPaid > 0
+        ? [`• Payment: ${formatCurrency(calculated.amountPaid)} | ${paymentMode} | ${formatDate(billDate)}`]
+        : []
+
+      const messageLines = [
+        `*${currentShop.name || "Shop"}*`,
+        shopAddress,
+        currentShop.mobile ? `Contact: ${currentShop.mobile}` : "",
+        currentShop.gstin ? `GSTIN: ${currentShop.gstin}` : "",
+        separator,
+        "*TAX INVOICE / BILL*",
+        separator,
+        `*Bill No:* ${billNumber}`,
+        `*Bill Date:* ${formatDate(billDate)}`,
+        `*Due Date:* ${dueDate ? formatDate(dueDate) : "Not set"}`,
+        `*Status:* ${paymentStatus.toUpperCase()}`,
+        "*BILL TO*",
+        `Customer: ${customerForMessage?.name || "Customer"}`,
+        customerForMessage?.mobile ? `Mobile: ${customerForMessage.mobile}` : "",
+        customerAddress ? `Address: ${customerAddress}` : "",
+        separator,
+        "*ITEM DETAILS*",
+        separator,
+        ...(itemLines.length ? itemLines : ["Offline bill attachment uploaded."]),
+        separator,
+        "*AMOUNT SUMMARY*",
+        separator,
+        `Subtotal: ${formatCurrency(calculated.subtotal)}`,
+        ...(calculated.totalDiscount > 0 ? [`Discount: ${formatCurrency(calculated.totalDiscount)}`] : []),
+        ...(calculated.taxable > 0 ? [`Taxable Amount: ${formatCurrency(calculated.taxable)}`] : []),
+        ...(calculated.cgst > 0 ? [`CGST: ${formatCurrency(calculated.cgst)}`] : []),
+        ...(calculated.sgst > 0 ? [`SGST: ${formatCurrency(calculated.sgst)}`] : []),
+        ...(calculated.igst > 0 ? [`IGST: ${formatCurrency(calculated.igst)}`] : []),
+        ...(calculated.totalGst > 0 ? [`Total GST: ${formatCurrency(calculated.totalGst)}`] : []),
+        ...(numberValue(roundOff) !== 0 ? [`Round Off: ${formatCurrency(numberValue(roundOff))}`] : []),
+        `*GRAND TOTAL: ${formatCurrency(calculated.grandTotal)}*`,
+        `Advance Adjusted: ${formatCurrency(calculated.advanceUsed)}`,
+        `Amount Received: ${formatCurrency(calculated.amountPaid)}`,
+        `Total Received: ${formatCurrency(settledAmount)}`,
+        `*BALANCE DUE: ${formatCurrency(calculated.amountDue)}*`,
+        ...(paymentLines.length ? ["*PAYMENT HISTORY*", ...paymentLines] : []),
+        notes.trim() ? `Notes: ${notes.trim()}` : "",
+        "Thank you for your business",
+      ].filter((line) => line !== null && line !== undefined && line !== "")
+
+      const message = messageLines.join("\n")
+
+      setCreatedBillShare({
+        billId: bill.id,
+        billNumber,
+        phone: whatsappPhone,
+        customerName: customerForMessage?.name || "Customer",
+        message,
+        attachmentUrl: uploadedBillUrl,
+      })
       toast.success(`Bill ${billNumber} created`)
-      navigate(`/bills/${bill.id}`)
+
     } catch (error) {
       console.error("Create bill error:", error)
 
@@ -2481,6 +2589,79 @@ export default function CreateBill() {
           </Button>
         </div>
       </form>
+
+      <Dialog open={Boolean(createdBillShare)} onOpenChange={(open) => {
+        if (!open && createdBillShare) navigate(`/bills/${createdBillShare.billId}`)
+      }}>
+        <DialogContent className="w-[calc(100vw-1.25rem)] max-w-lg overflow-hidden rounded-[20px] border border-violet-100 dark:border-slate-700 p-0">
+          <DialogHeader className="border-b border-violet-100 dark:border-slate-700 bg-[#f7f5ff] dark:bg-slate-950 px-5 py-4 text-left">
+            <div className="flex items-center gap-3 pr-7">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
+                <CheckCircle2 className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <DialogTitle className="text-base font-bold text-slate-900 dark:text-slate-100">
+                  Bill created successfully
+                </DialogTitle>
+                <DialogDescription className="text-xs">
+                  {createdBillShare?.billNumber} is saved. Share the invoice details with the customer.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-3 bg-white p-5 dark:bg-slate-900">
+            <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/70">
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                {createdBillShare?.customerName}
+              </p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                {createdBillShare?.phone ? `WhatsApp: +${createdBillShare.phone}` : "No WhatsApp/mobile number saved for this customer."}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+              <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">WhatsApp message includes</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                Invoice details, item-wise quantity and rate, GST breakup, taxable amount, discount, round off, grand total, advance adjustment, received amount, payment history, notes and balance due.
+              </p>
+              {createdBillShare?.attachmentUrl && (
+                <a
+                  href={createdBillShare.attachmentUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-block text-xs font-semibold text-violet-700 underline dark:text-violet-300"
+                >
+                  View uploaded bill attachment
+                </a>
+              )}
+            </div>
+            <p className="text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+              WhatsApp will open with the complete bill details pre-filled. Review the message and tap Send.
+            </p>
+          </div>
+
+          <DialogFooter className="flex-col gap-2 border-t border-violet-100 bg-[#f7f5ff] px-5 py-4 dark:border-slate-700 dark:bg-slate-950 sm:flex-row">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => navigate(`/bills/${createdBillShare?.billId}`)}
+              className="h-11 w-full rounded-xl border-violet-200 bg-white text-slate-700 hover:bg-violet-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 sm:w-auto"
+            >
+              <Receipt className="mr-2 h-4 w-4" />
+              View bill
+            </Button>
+            <Button
+              type="button"
+              disabled={!createdBillShare?.phone}
+              onClick={openWhatsAppDraft}
+              className="h-11 w-full rounded-xl border border-violet-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 px-5 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-700 sm:flex-1"
+            >
+              <MessageCircle className="mr-2 h-4 w-4" />
+              Send on WhatsApp
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={reviewOpen} onOpenChange={(open) => !saving && setReviewOpen(open)}>
         <DialogContent className="flex max-h-[94vh] w-[calc(100vw-1.5rem)] max-w-4xl flex-col gap-0 overflow-hidden rounded-[20px] border border-violet-100 dark:border-slate-700 p-0 shadow-[0_12px_32px_rgba(80,65,130,0.20)]">

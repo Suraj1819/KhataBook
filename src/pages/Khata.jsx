@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { useShop } from "@/contexts/ShopContext"
 import { supabase } from "@/lib/supabase"
 import { formatCurrency, formatDate } from "@/lib/utils"
+import { downloadKhataPDF } from "@/lib/khataPdf"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -36,6 +37,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock3,
+  FileDown,
   Loader2,
   MapPin,
   MessageCircle,
@@ -984,6 +986,54 @@ export default function Khata() {
         <div className="flex flex-wrap items-center gap-2">
           {/* Bills-style date period calendar */}
           <PeriodMenu period={period} onChange={setPeriod} range={range} label={periodLabel} today={today} />
+
+          {/* Export the currently filtered customer khata */}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              try {
+                const exportCustomers = filteredCustomers.map((customer) => ({
+                  ...customer,
+                  entries: Array.isArray(customer.entries) ? customer.entries : [],
+                }))
+
+                // Backfill customer details on older ledger rows so the PDF
+                // never prints blank customer names/mobile numbers.
+                const exportEntries = exportCustomers.flatMap((customer) =>
+                  customer.entries.map((entry) => ({
+                    ...entry,
+                    customer_name: entry.customer_name || customer.name,
+                    mobile: entry.mobile || customer.mobile,
+                    address: entry.address || customer.address,
+                  }))
+                )
+
+                if (!exportEntries.length) {
+                  toast.error("No khata entries to export")
+                  return
+                }
+
+                downloadKhataPDF({
+                  customers: exportCustomers,
+                  entries: exportEntries,
+                  shop: currentShop || {},
+                  periodLabel,
+                })
+                toast.success("Khata PDF downloaded")
+              } catch (error) {
+                console.error("Khata PDF export error:", error)
+                toast.error("Could not export khata PDF", {
+                  description: error?.message || "Please try again.",
+                })
+              }
+            }}
+            disabled={!filteredCustomers.length || refreshing}
+            className={`h-11 gap-2 px-4 font-semibold ${outlineBtn}`}
+          >
+            <FileDown className="h-4 w-4" aria-hidden="true" />
+            Export PDF
+          </Button>
 
           {/* Bills-style refresh */}
           <Button

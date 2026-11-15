@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { useShop } from "@/contexts/ShopContext"
 import { supabase } from "@/lib/supabase"
 import { formatCurrency, formatDate, PAYMENT_MODES } from "@/lib/utils"
+import { downloadPaymentsPDF } from "@/lib/paymentsPdf"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -670,7 +671,7 @@ export default function Payments() {
     return {
       gross,
       refunds,
-      net: Math.max(0, gross - refunds),
+      net: gross - refunds,
       advances,
       advanceCount,
       refundCount,
@@ -853,7 +854,7 @@ export default function Payments() {
     document.body.appendChild(link)
     link.click()
     link.remove()
-    URL.revokeObjectURL(url)
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 
     toast.success("Payments exported", {
       description: `${filtered.length} ${filtered.length === 1 ? "record" : "records"} saved as CSV`,
@@ -1239,7 +1240,7 @@ export default function Payments() {
                   : `${payments.length} ${payments.length === 1 ? "record" : "records"} · ${shortLabel}`
               }
               action={
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                   <Button
                     type="button"
                     variant="outline"
@@ -1250,6 +1251,17 @@ export default function Payments() {
                   >
                     <Download className="h-3.5 w-3.5" aria-hidden="true" />
                     Export CSV
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => downloadPaymentsPDF(filtered, currentShop, periodLabel)}
+                    disabled={filtered.length === 0}
+                    className="h-9 gap-1.5 rounded-xl border-violet-200 bg-white/90 px-3 text-xs font-medium text-slate-700 shadow-sm hover:bg-violet-50 disabled:opacity-50"
+                  >
+                    <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                    Export PDF
                   </Button>
                   {hasActiveFilters && (
                     <Button

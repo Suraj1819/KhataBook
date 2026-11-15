@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { useShop } from "@/contexts/ShopContext"
 import { supabase } from "@/lib/supabase"
 import { formatCurrency, formatDate } from "@/lib/utils"
+import { generateBillsStatementPDF } from "@/lib/billsPdf"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -27,6 +28,8 @@ import {
   Clock3,
   Eye,
   FileText,
+  FileDown,
+  FileSpreadsheet,
   IndianRupee,
   Plus,
   Receipt,
@@ -35,6 +38,8 @@ import {
   SlidersHorizontal,
   Wallet,
   X,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react"
 
 import { toast } from "sonner"
@@ -149,14 +154,88 @@ async function fetchAllRows(buildQuery) {
   return rows
 }
 
+const exportNumber = (value) => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const exportMoney = (value) =>
+  `Rs. ${exportNumber(value).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`
+
+const exportDate = (value) => {
+  if (!value) return "—"
+  try {
+    return formatDate(value)
+  } catch {
+    return String(value)
+  }
+}
+
+const csvEscape = (value) => {
+  const text = String(value ?? "")
+  return `"${text.replace(/"/g, '""')}"`
+}
+
+function downloadExport(blob, fileName) {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement("a")
+  anchor.href = url
+  anchor.download = fileName
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500)
+}
+
+function exportBillsCSV(rows, shopName) {
+  const headers = [
+    "Bill Number", "Customer", "Mobile", "Bill Date", "Due Date",
+    "Payment Status", "Total Amount", "Advance Adjusted", "Amount Paid", "Amount Due",
+  ]
+
+  const records = rows.map((bill) => [
+    bill.bill_number || "",
+    bill.customers?.name || "Walk-in Customer",
+    bill.customers?.mobile || "",
+    exportDate(bill.bill_date),
+    exportDate(bill.due_date),
+    bill.overdue ? "Overdue" : bill.status === "partial" ? "Partially paid" : bill.status === "paid" ? "Paid" : "Unpaid",
+    exportNumber(bill.total),
+    exportNumber(bill.advance_adjusted),
+    exportNumber(bill.amount_paid),
+    exportNumber(bill.due),
+  ])
+
+  const csv = [headers, ...records]
+    .map((row) => row.map(csvEscape).join(","))
+    .join("\r\n")
+
+  const date = new Date().toISOString().slice(0, 10)
+  const fileName = `${String(shopName || "KHAATAPRO").replace(/[^a-z0-9-_]+/gi, "_")}_Bills_${date}.csv`
+  downloadExport(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8;" }), fileName)
+}
+
 // Use the saved status; if it is missing, work it out from the amounts
 function getStatusKey(bill) {
-  const saved = String(bill.payment_status || "").toLowerCase()
-  if (saved === "paid" || saved === "partial" || saved === "unpaid") return saved
+  const saved = String(bill?.payment_status || "").trim().toLowerCase()
 
-  const due = num(bill.amount_due)
+  if (saved === "paid") return "paid"
+  if (["partial", "partially_paid", "partially paid"].includes(saved)) {
+    return "partial"
+  }
+  if (["unpaid", "pending", "overdue"].includes(saved)) {
+    return "unpaid"
+  }
+
+  const due = num(bill?.amount_due)
   if (due <= 0) return "paid"
-  return num(bill.amount_paid) > 0 ? "partial" : "unpaid"
+
+  return num(bill?.amount_paid) > 0 || num(bill?.advance_adjusted) > 0
+    ? "partial"
+    : "unpaid"
 }
 
 /* ==================================================
@@ -230,6 +309,51 @@ function StatusBadge({ status }) {
   )
 }
 
+// Convert a Supabase Storage URL or stored object path into a bucket-relative path.
+function safeDecodePath(value) {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+function getBillAttachmentPath(value) {
+  if (!value) return null
+
+  const raw = String(value).trim()
+  if (!raw) return null
+
+  try {
+    const parsed = new URL(raw)
+    const marker = "/storage/v1/object/"
+    const markerIndex = parsed.pathname.indexOf(marker)
+
+    if (markerIndex >= 0) {
+      const storagePart = parsed.pathname.slice(markerIndex + marker.length)
+      const prefixes = [
+        "public/bill_attachments/",
+        "sign/bill_attachments/",
+        "authenticated/bill_attachments/",
+      ]
+
+      const prefix = prefixes.find((item) => storagePart.startsWith(item))
+
+      if (prefix) {
+        return safeDecodePath(storagePart.slice(prefix.length))
+      }
+    }
+  } catch {
+    // The value may already be a bucket-relative object path.
+  }
+
+  const relativePath = raw
+    .replace(/^\/+/, "")
+    .replace(/^bill_attachments\//, "")
+
+  return safeDecodePath(relativePath)
+}
+
 /* ==================================================
    BILLS PAGE
 ================================================== */
@@ -240,6 +364,8 @@ function Bills() {
   const today = getLocalDateString()
 
   const [bills, setBills] = useState([])
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleting, setDeleting] = useState(false)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [loadError, setLoadError] = useState("")
@@ -251,7 +377,7 @@ function Bills() {
   const [page, setPage] = useState(1)
 
   // Bills page starts with all bills; pick a period from the date menu
-  const [period, setPeriod] = useState({ mode: "today", from: "", to: "" })
+  const [period, setPeriod] = useState({ mode: "overall", from: "", to: "" })
   const [periodOpen, setPeriodOpen] = useState(false)
   const periodRef = useRef(null)
 
@@ -375,7 +501,7 @@ function Bills() {
               .from("bills")
               .select(
                 `id, bill_number, bill_date, due_date, grand_total, amount_paid,
-                 amount_due, advance_adjusted, payment_status, created_at,
+                 amount_due, advance_adjusted, payment_status, created_at, attachment_url,
                  customers ( id, name, mobile, photo_url )`
               )
               .eq("shop_id", shopId),
@@ -411,6 +537,71 @@ function Bills() {
   useEffect(() => {
     loadBills()
   }, [loadBills])
+
+  const handleDeleteBill = async () => {
+    if (!deleteTarget?.id || !shopId || deleting) return
+
+    setDeleting(true)
+    try {
+      const { data: billRecord, error: fetchError } = await supabase
+        .from("bills")
+        .select("id, shop_id, attachment_url")
+        .eq("id", deleteTarget.id)
+        .eq("shop_id", shopId)
+        .single()
+
+      if (fetchError) throw fetchError
+      if (!billRecord) throw new Error("Bill not found in this workspace.")
+
+      const { error: paymentsError } = await supabase
+        .from("payments")
+        .delete()
+        .eq("bill_id", billRecord.id)
+        .eq("shop_id", shopId)
+      if (paymentsError) throw paymentsError
+
+      const { error: itemsError } = await supabase
+        .from("bill_items")
+        .delete()
+        .eq("bill_id", billRecord.id)
+      if (itemsError) throw itemsError
+
+      const { error: billError } = await supabase
+        .from("bills")
+        .delete()
+        .eq("id", billRecord.id)
+        .eq("shop_id", shopId)
+      if (billError) throw billError
+
+      const attachmentPath = getBillAttachmentPath(billRecord.attachment_url)
+      let storageWarning = ""
+      if (attachmentPath) {
+        const { error: storageError } = await supabase.storage
+          .from("bill_attachments")
+          .remove([attachmentPath])
+        if (storageError) {
+          console.error("Bill attachment storage deletion failed:", storageError)
+          storageWarning = " The bill was deleted, but its attachment could not be removed from Storage."
+        }
+      }
+
+      setBills((current) => current.filter((bill) => bill.id !== billRecord.id))
+      setDeleteTarget(null)
+      toast.success(
+        storageWarning
+          ? "Bill deleted." + storageWarning
+          : "Bill and its attachment deleted successfully."
+      )
+      await loadBills(true)
+    } catch (error) {
+      console.error("Delete bill error:", error)
+      toast.error("Could not delete bill", {
+        description: error?.message || "Please try again.",
+      })
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   /* --------------------------------------------------
      DERIVED DATA
@@ -778,25 +969,44 @@ function Bills() {
       <Card className="overflow-hidden rounded-[20px] border border-white/80 bg-white/85 shadow-[0_5px_18px_rgba(80,65,130,0.07)] backdrop-blur-sm">
         {/* Header, search and sort */}
         <div className="space-y-4 border-b border-[#eae7f4] px-4 py-4 sm:px-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
-                <Receipt className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
+          <div className="space-y-3">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex min-w-0 items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+                    <Receipt className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-[16px] font-bold tracking-tight text-[#171a36]">All bills</h2>
+                    <p className="mt-0.5 text-xs text-slate-500" aria-live="polite">
+                      {filteredBills.length === enriched.length
+                        ? `${enriched.length.toLocaleString("en-IN")} bills`
+                        : `${filteredBills.length.toLocaleString("en-IN")} of ${enriched.length.toLocaleString("en-IN")} bills match`}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2 xl:hidden">
+                  <Button type="button" variant="outline" onClick={() => generateBillsStatementPDF(filteredBills, currentShop, periodLabel)} disabled={!filteredBills.length} className="h-9 gap-1.5 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-violet-50">
+                    <FileDown className="h-4 w-4" /> PDF
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => exportBillsCSV(filteredBills, currentShop?.name)} disabled={!filteredBills.length} className="h-9 gap-1.5 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-violet-50">
+                    <FileSpreadsheet className="h-4 w-4" /> CSV
+                  </Button>
+                </div>
               </div>
-              <div className="min-w-0">
-                <h2 className="text-[16px] font-bold tracking-tight text-[#171a36]">
-                  All bills
-                </h2>
-                <p className="mt-0.5 text-xs text-slate-500" aria-live="polite">
-                  {filteredBills.length === enriched.length
-                    ? `${enriched.length.toLocaleString("en-IN")} bills`
-                    : `${filteredBills.length.toLocaleString("en-IN")} of ${enriched.length.toLocaleString("en-IN")} bills match`}
-                </p>
+
+              <div className="hidden shrink-0 items-center gap-2 xl:flex">
+                <Button type="button" variant="outline" onClick={() => generateBillsStatementPDF(filteredBills, currentShop, periodLabel)} disabled={!filteredBills.length} className="h-10 gap-2 rounded-xl border-violet-200 bg-white px-3.5 text-sm font-semibold text-slate-700 shadow-sm hover:border-violet-300 hover:bg-violet-50">
+                  <FileDown className="h-4 w-4" /> Export PDF
+                </Button>
+                <Button type="button" variant="outline" onClick={() => exportBillsCSV(filteredBills, currentShop?.name)} disabled={!filteredBills.length} className="h-10 gap-2 rounded-xl border-violet-200 bg-white px-3.5 text-sm font-semibold text-slate-700 shadow-sm hover:border-violet-300 hover:bg-violet-50">
+                  <FileSpreadsheet className="h-4 w-4" /> Export CSV
+                </Button>
               </div>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <div className="relative w-full sm:w-[300px]">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_190px]">
+              <div className="relative w-full">
                 <Search
                   className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
                   aria-hidden="true"
@@ -821,16 +1031,11 @@ function Bills() {
                   </button>
                 )}
               </div>
-
               <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger
-                  aria-label="Sort bills"
-                  className="h-10 w-full rounded-xl border-violet-200 bg-white/90 sm:w-[185px]"
-                >
-                  <SlidersHorizontal className="mr-2 h-4 w-4 text-slate-400" aria-hidden="true" />
+                <SelectTrigger aria-label="Sort bills" className="h-10 w-full rounded-xl border-violet-200 bg-white/90">
+                  <SlidersHorizontal className="mr-2 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
                   <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
-
                 <SelectContent>
                   <SelectItem value="newest">Newest first</SelectItem>
                   <SelectItem value="oldest">Oldest first</SelectItem>
@@ -1034,14 +1239,25 @@ function Bills() {
                         </td>
 
                         <td className="px-3 py-3">
-                          <Link
-                            to={`/bills/${bill.id}`}
-                            aria-label={`View bill ${bill.bill_number || ""} for ${name}`}
-                            className="mx-auto flex h-8 w-[68px] items-center justify-center gap-1.5 rounded-xl border border-violet-200 bg-white/90 text-xs font-medium text-slate-700 shadow-sm transition-all hover:border-violet-300 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
-                          >
-                            <Eye className="h-3.5 w-3.5" aria-hidden="true" />
-                            View
-                          </Link>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <Link
+                              to={`/bills/${bill.id}`}
+                              aria-label={`View bill ${bill.bill_number || ""} for ${name}`}
+                              className="flex h-8 w-[68px] items-center justify-center gap-1.5 rounded-xl border border-violet-200 bg-white/90 text-xs font-medium text-slate-700 shadow-sm transition-all hover:border-violet-300 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40"
+                            >
+                              <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                              View
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteTarget(bill)}
+                              aria-label={`Delete bill ${bill.bill_number || ""}`}
+                              title="Delete bill"
+                              className="flex h-8 w-8 items-center justify-center rounded-xl border border-rose-200 bg-white text-rose-600 shadow-sm transition-colors hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/40"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )
@@ -1145,17 +1361,28 @@ function Bills() {
                       </div>
                     </div>
 
-                    <Button
-                      asChild
-                      variant="outline"
-                      size="sm"
-                      className="h-9 w-full gap-1.5 rounded-xl border border-violet-200 bg-white/90 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-violet-300 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Link to={`/bills/${bill.id}`}>
-                        View bill
-                        <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
-                      </Link>
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        asChild
+                        variant="outline"
+                        size="sm"
+                        className="h-9 flex-1 gap-1.5 rounded-xl border border-violet-200 bg-white/90 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-violet-300 hover:bg-violet-50"
+                      >
+                        <Link to={`/bills/${bill.id}`}>
+                          View bill
+                          <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+                        </Link>
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget(bill)}
+                        className="flex h-9 w-11 shrink-0 items-center justify-center rounded-xl border border-rose-200 bg-white text-rose-600 transition-colors hover:bg-rose-50"
+                        aria-label={`Delete bill ${bill.bill_number || ""}`}
+                        title="Delete bill"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </li>
                 )
               })}
@@ -1237,12 +1464,61 @@ function Bills() {
         )}
       </Card>
 
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 p-3 backdrop-blur-[2px]"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !deleting) setDeleteTarget(null)
+          }}
+        >
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-bill-title"
+            aria-describedby="delete-bill-description"
+            className="w-full max-w-md rounded-2xl border border-violet-100 bg-white p-5 shadow-[0_20px_60px_rgba(30,25,60,0.22)] sm:p-6"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h2 id="delete-bill-title" className="text-base font-bold text-slate-900">Delete this bill?</h2>
+                <p id="delete-bill-description" className="mt-1 text-sm leading-5 text-slate-600">
+                  Bill <strong>{deleteTarget.bill_number || "without a bill number"}</strong> will be permanently deleted, along with its items, linked payment records and offline attachment from the bill_attachments storage bucket. This action cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setDeleteTarget(null)}
+                className="h-10 rounded-xl border border-violet-200 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-violet-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={handleDeleteBill}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 text-sm font-semibold text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Trash2 className="h-4 w-4" />
+                {deleting ? "Deleting…" : "Delete bill"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {/* FOOTER */}
 
       <footer className="flex flex-col justify-between gap-2 rounded-xl border border-white/80 bg-white/65 px-4 py-3 text-xs text-slate-500 sm:flex-row sm:items-center">
         <span>
           Workspace:
-          <strong className="ml-1 text-slate-700">{currentShop.name}</strong>
+          <strong className="ml-1 text-slate-700">{currentShop?.name || "Workspace"}</strong>
         </span>
 
         <span>

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom"
 import { useShop } from "@/contexts/ShopContext"
 import { supabase } from "@/lib/supabase"
 import { formatCurrency, formatDate } from "@/lib/utils"
+import { downloadKhataDetailsPDF } from "@/lib/khataDetailsPdf"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -41,6 +42,7 @@ import {
   Clock3,
   Eye,
   FileText,
+  FileDown,
   Loader2,
   MapPin,
   Mail,
@@ -1226,6 +1228,32 @@ export default function KhataDetail() {
               </>
             )}
           </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            disabled={periodSummary.entries.length === 0}
+            onClick={() => {
+              try {
+                downloadKhataDetailsPDF({
+                  customer,
+                  entries: periodSummary.entries,
+                  summary: periodSummary,
+                  shop: currentShop || {},
+                  periodLabel,
+                })
+                toast.success("Customer statement exported")
+              } catch (error) {
+                toast.error("Could not export statement", {
+                  description: error?.message || "Please try again.",
+                })
+              }
+            }}
+            className="h-11 gap-2 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-violet-300 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <FileDown className="h-4 w-4 shrink-0" />
+            <span>Export PDF</span>
+          </Button>
 
           <Button
             type="button"

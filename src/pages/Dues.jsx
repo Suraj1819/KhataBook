@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { useShop } from "@/contexts/ShopContext"
 import { supabase } from "@/lib/supabase"
 import { formatCurrency, formatDate, PAYMENT_MODES } from "@/lib/utils"
+import { generateDuesPDF } from "@/lib/duesPdf"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -37,6 +38,7 @@ import {
   CircleAlert,
   Clock3,
   Download,
+  FileDown,
   Eye,
   IndianRupee,
   Layers,
@@ -207,7 +209,7 @@ function getStatusBadge(bill, today) {
 
   return {
     label: "Unpaid",
-    className: "bg-slate-100 text-slate-700 border-slate-200",
+    className: "bg-rose-50 text-rose-700 border-rose-200",
     icon: CircleAlert,
   }
 }
@@ -300,7 +302,7 @@ function DuesSkeleton() {
 const SUMMARY_TONES = {
   green: { icon: "bg-emerald-100/80 text-emerald-700", accent: "text-emerald-700" },
   blue: { icon: "bg-blue-100/80 text-blue-700", accent: "text-blue-700" },
-  pink: { icon: "bg-pink-100/80 text-pink-700", accent: "text-pink-700" },
+  pink: { icon: "bg-rose-100 text-rose-700", accent: "text-rose-700" },
   amber: { icon: "bg-amber-100/80 text-amber-700", accent: "text-amber-700" },
   purple: { icon: "bg-violet-100/80 text-violet-700", accent: "text-violet-700" },
 }
@@ -319,7 +321,7 @@ function SummaryCard({ label, value, detail, icon: Icon, tone = "green" }) {
 
         <div className="min-w-0 flex-1">
           <p className="truncate text-[12px] font-medium text-slate-500">{label}</p>
-          <h3 className="mt-1 break-words text-[22px] font-bold leading-none tracking-tight text-slate-900 tabular-nums">
+          <h3 className={`mt-1 break-words text-[22px] font-bold leading-none tracking-tight tabular-nums ${tone === "pink" ? "text-rose-600" : "text-slate-900"}`}>
             {value}
           </h3>
           <p className={`mt-1.5 text-[11px] font-medium ${style.accent}`}>{detail}</p>
@@ -772,6 +774,27 @@ export default function Dues() {
   }
 
   // Download the currently filtered list as a CSV (opens in Excel / Sheets)
+  const exportPdf = () => {
+  if (!filtered.length) {
+    toast.error("No dues available to export")
+    return
+  }
+
+  try {
+    const fileName = generateDuesPDF(filtered, currentShop)
+
+    toast.success("Dues PDF downloaded", {
+      description: fileName,
+    })
+  } catch (error) {
+    console.error("Dues PDF error:", error)
+
+    toast.error("PDF generation failed", {
+      description: error?.message || "Please try again.",
+    })
+  }
+}
+
   const exportCsv = () => {
     if (filtered.length === 0) return
 
@@ -957,7 +980,20 @@ export default function Dues() {
   -------------------------------------------------- */
 
   return (
-    <div className="min-h-full w-full space-y-4 rounded-2xl bg-[#f7f5ff] px-3 py-5 sm:px-5 lg:px-6">
+    <div className="dues-page-enter min-h-full w-full space-y-4 rounded-2xl bg-[#f7f5ff] px-3 py-5 sm:px-5 lg:px-6">
+      <style>{`
+        @keyframes dues-enter-from-top {
+          from { opacity: 0; transform: translate3d(0, -22px, 0); }
+          to { opacity: 1; transform: translate3d(0, 0, 0); }
+        }
+        .dues-page-enter {
+          animation: dues-enter-from-top 520ms cubic-bezier(.2,.75,.25,1) both;
+          transform-origin: top center;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .dues-page-enter { animation: none; }
+        }
+      `}</style>
       {/* PAGE HEADER */}
 
       <header className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
@@ -1159,7 +1195,7 @@ export default function Dues() {
           value={formatCurrency(stats.outstanding)}
           detail={`${stats.billCount} ${stats.billCount === 1 ? "bill" : "bills"} pending`}
           icon={IndianRupee}
-          tone="blue"
+          tone="pink"
         />
 
         <SummaryCard
@@ -1175,7 +1211,7 @@ export default function Dues() {
           value={formatCurrency(stats.today)}
           detail={`${stats.todayCount} ${stats.todayCount === 1 ? "bill" : "bills"} due today`}
           icon={CalendarClock}
-          tone="amber"
+          tone="pink"
         />
 
         <SummaryCard
@@ -1204,6 +1240,17 @@ export default function Dues() {
               }
               action={
                 <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={exportPdf}
+                    disabled={filtered.length === 0}
+                    className="h-9 gap-1.5 rounded-xl border-violet-200 bg-white/90 px-3 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                  >
+                    <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
+                    Export PDF
+                  </Button>
                   <Button
                     type="button"
                     variant="outline"
@@ -1408,8 +1455,16 @@ export default function Dues() {
                               </div>
                             </td>
 
-                            <td className="whitespace-nowrap px-3 py-3 text-xs font-medium text-slate-600">
-                              {bill.bill_number || "—"}
+                            <td className="whitespace-nowrap px-3 py-3 text-xs font-semibold">
+                              <Link
+                                to={`/bills/${bill.id}`}
+                                aria-label={`Open invoice ${bill.bill_number || ""}`}
+                                title="Open invoice details"
+                                className="inline-flex items-center gap-1 rounded-md text-violet-700 underline-offset-4 transition-colors hover:text-emerald-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                              >
+                                {bill.bill_number || "View invoice"}
+                                <ArrowRight className="h-3 w-3" aria-hidden="true" />
+                              </Link>
                             </td>
 
                             <td className="whitespace-nowrap px-3 py-3">
@@ -1432,9 +1487,7 @@ export default function Dues() {
                             </td>
 
                             <td
-                              className={`whitespace-nowrap px-3 py-3 text-right text-xs font-bold tabular-nums ${
-                                overdue ? "text-rose-600" : "text-slate-900"
-                              }`}
+                              className="whitespace-nowrap px-3 py-3 text-right text-xs font-bold tabular-nums text-rose-600"
                             >
                               {formatCurrency(bill.amount_due)}
                             </td>
@@ -1496,10 +1549,19 @@ export default function Dues() {
                               >
                                 {name}
                               </Link>
-                              <p className="mt-0.5 truncate text-xs text-slate-500">
-                                {bill.bill_number || "Bill"}
-                                {bill.customers?.mobile ? ` · ${bill.customers.mobile}` : ""}
-                              </p>
+                              <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                                <Link
+                                  to={`/bills/${bill.id}`}
+                                  aria-label={`Open invoice ${bill.bill_number || ""}`}
+                                  className="inline-flex items-center gap-1 font-semibold text-violet-700 underline-offset-4 hover:text-emerald-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                                >
+                                  {bill.bill_number || "View invoice"}
+                                  <ArrowRight className="h-3 w-3" aria-hidden="true" />
+                                </Link>
+                                {bill.customers?.mobile && (
+                                  <span className="text-slate-500">· {bill.customers.mobile}</span>
+                                )}
+                              </div>
                             </div>
                           </div>
                           <StatusPill status={status} />
@@ -1522,9 +1584,7 @@ export default function Dues() {
                               Due of {formatCurrency(bill.grand_total)}
                             </p>
                             <p
-                              className={`mt-0.5 text-lg font-bold tabular-nums ${
-                                overdue ? "text-rose-600" : "text-slate-900"
-                              }`}
+                              className="mt-0.5 text-lg font-bold tabular-nums text-rose-600"
                             >
                               {formatCurrency(bill.amount_due)}
                             </p>
@@ -1675,7 +1735,9 @@ export default function Dues() {
                   {recoveredRate}%
                 </p>
                 <p className="mt-1.5 text-xs text-slate-600">
-                  {formatCurrency(stats.alreadyPaid)} paid, {formatCurrency(stats.outstanding)} to go
+                  <span className="text-emerald-700">{formatCurrency(stats.alreadyPaid)} paid</span>
+                  <span className="mx-1 text-slate-400">·</span>
+                  <span className="font-semibold text-rose-600">{formatCurrency(stats.outstanding)} still due</span>
                 </p>
 
                 <div
@@ -1716,7 +1778,7 @@ export default function Dues() {
                         {bucket.label}
                         <span className="ml-1.5 text-slate-400">({bucket.count})</span>
                       </span>
-                      <span className="shrink-0 font-bold tabular-nums text-slate-900">
+                      <span className={`shrink-0 font-bold tabular-nums ${bucket.key === "current" ? "text-emerald-700" : "text-rose-600"}`}>
                         {formatCurrency(bucket.amount)}
                       </span>
                     </div>

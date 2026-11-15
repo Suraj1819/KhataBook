@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom"
 import { useShop } from "@/contexts/ShopContext"
 import { supabase } from "@/lib/supabase"
 import { formatCurrency, formatDate, PAYMENT_MODES } from "@/lib/utils"
-import { generateBillPDF } from "@/lib/pdf"
+import { generateBillPDF, createBillPDFBlob } from "@/lib/pdf"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -32,6 +32,7 @@ import {
   ArrowLeft,
   ArrowUpRight,
   CalendarClock,
+  CalendarDays,
   CheckCircle2,
   ChevronRight,
   CircleAlert,
@@ -41,6 +42,7 @@ import {
   Download,
   Eye,
   FileText,
+  FileSpreadsheet,
   Image as ImageIcon,
   IndianRupee,
   Loader2,
@@ -151,8 +153,10 @@ function getStoragePath(url) {
 }
 
 function normalizeIndianMobile(mobile = "") {
-  const digits = String(mobile).replace(/\D/g, "")
-  return digits.length === 10 ? `91${digits}` : digits
+  let digits = String(mobile ?? "").replace(/\D/g, "")
+  if (digits.length === 10) digits = `91${digits}`
+  if (digits.startsWith("0091") && digits.length === 14) digits = digits.slice(2)
+  return digits.length >= 11 && digits.length <= 15 ? digits : ""
 }
 
 /* Amount in words (Indian numbering: thousand, lakh, crore) */
@@ -278,14 +282,14 @@ function SummaryCard({ label, value, detail, icon: Icon, tone = "green", valueCl
 
 function SectionHeader({ icon: Icon, title, description, action }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-[#eae7f4] px-5 py-4">
+    <div className="flex flex-col items-stretch gap-3 border-b border-[#eae7f4] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-5">
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
           <Icon className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
         </div>
 
         <div className="min-w-0">
-          <h2 className="text-[16px] font-bold tracking-tight text-[#171a36]">{title}</h2>
+          <h2 className="whitespace-nowrap text-[16px] font-bold tracking-tight text-[#171a36]">{title}</h2>
           {description && <p className="mt-0.5 text-xs text-slate-500">{description}</p>}
         </div>
       </div>
@@ -350,7 +354,7 @@ function ErrorBanner({ message, onRetry }) {
         </span>
       </div>
 
-      <Button size="sm" variant="outline" onClick={onRetry} className="shrink-0 border-rose-200 bg-white">
+      <Button size="sm" variant="outline" onClick={onRetry} className="shrink-0 border-rose-200 bg-white shadow-sm">
         Try again
       </Button>
     </div>
@@ -413,6 +417,8 @@ function PageHeader({
   onRefresh,
   onPreview,
   onDownload,
+  onShareInvoice,
+  sharingInvoice,
   onRecordPayment,
 }) {
   async function copyBillNumber() {
@@ -424,37 +430,46 @@ function PageHeader({
     }
   }
 
+  const currentDateLabel = new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date())
+
+  const actionButtonClass =
+    "inline-flex h-11 w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-violet-200 bg-white px-3 text-sm font-medium leading-none text-slate-700 shadow-sm transition-all duration-200 hover:-translate-y-px hover:border-violet-300 hover:bg-violet-50 hover:text-violet-800 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60 sm:w-auto sm:px-4"
+
   return (
-    <header className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-      <div className="flex min-w-0 items-center gap-4">
+    <header className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex min-w-0 items-start gap-3 sm:gap-4">
         <Button
           asChild
           variant="outline"
           size="icon"
           aria-label="Back to bills"
-          className="h-11 w-11 shrink-0 rounded-xl border-violet-200 bg-white/90 shadow-sm hover:bg-violet-50"
+          className="mt-1 h-11 w-11 shrink-0 rounded-xl border border-violet-200 bg-white shadow-sm transition-all hover:-translate-y-px hover:border-violet-300 hover:bg-violet-50 hover:shadow-md"
         >
           <Link to="/bills">
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
 
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <nav
             aria-label="Breadcrumb"
-            className="flex items-center gap-2 text-xs font-medium text-slate-500"
+            className="mb-1 hidden min-w-0 items-center gap-1.5 overflow-hidden text-xs font-medium text-slate-500 sm:flex"
           >
-            <span>{shopName || "Workspace"}</span>
-            <ChevronRight className="h-3 w-3" aria-hidden="true" />
-            <Link to="/bills" className="transition-colors hover:text-slate-800">
+            <span className="max-w-[140px] truncate">{shopName || "Workspace"}</span>
+            <ChevronRight className="h-3 w-3 shrink-0" aria-hidden="true" />
+            <Link to="/bills" className="shrink-0 transition-colors hover:text-slate-800">
               Bills
             </Link>
-            <ChevronRight className="h-3 w-3" aria-hidden="true" />
+            <ChevronRight className="h-3 w-3 shrink-0" aria-hidden="true" />
             <span className="truncate">{bill.bill_number || "Bill details"}</span>
           </nav>
 
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <h1 className="truncate text-[26px] font-bold tracking-tight text-[#171a39] sm:text-[30px]">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h1 className="max-w-full truncate text-xl font-bold leading-tight tracking-tight text-[#171a39] sm:text-[30px]">
               {bill.bill_number || "Bill details"}
             </h1>
             <StatusPill status={status} />
@@ -463,7 +478,7 @@ function PageHeader({
               <button
                 type="button"
                 onClick={copyBillNumber}
-                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
+                className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
                 aria-label="Copy bill number"
                 title="Copy bill number"
               >
@@ -472,7 +487,7 @@ function PageHeader({
             )}
           </div>
 
-          <p className="mt-0.5 text-sm text-slate-600">
+          <p className="mt-1 break-words text-xs leading-5 text-slate-600 sm:text-sm">
             {bill.bill_date ? (
               <>
                 Issued on{" "}
@@ -491,47 +506,65 @@ function PageHeader({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center lg:w-auto lg:justify-end">
+        <div
+          className="col-span-2 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-violet-200 bg-white px-3 text-sm font-medium leading-none text-slate-700 shadow-sm sm:col-span-1 sm:w-auto sm:px-4"
+          aria-label={`Today, ${currentDateLabel}`}
+          title={`Today, ${currentDateLabel}`}
+        >
+          <CalendarDays className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
+          <span className="whitespace-nowrap">
+            <span className="mr-1.5">Today,</span>
+            <span>{currentDateLabel}</span>
+          </span>
+        </div>
+
         <Button
           type="button"
           variant="outline"
           onClick={onRefresh}
           disabled={refreshing}
-          aria-label="Refresh bill"
-          title="Refresh bill"
-          className="h-11 rounded-xl border-violet-100 bg-white px-3 shadow-sm hover:bg-violet-50"
+          aria-label={refreshing ? "Refreshing bill" : "Refresh bill"}
+          title={refreshing ? "Refreshing..." : "Refresh bill"}
+          className={actionButtonClass}
         >
-          <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+          <RefreshCw className={`h-4 w-4 shrink-0 ${refreshing ? "animate-spin" : ""}`} />
+          <span>{refreshing ? "Refreshing..." : "Refresh"}</span>
         </Button>
 
         <Button
           type="button"
           variant="outline"
           onClick={onPreview}
-          className="h-11 gap-2 rounded-xl border-violet-200 bg-white/90 px-4 text-slate-700 shadow-sm hover:bg-violet-50"
+          className={actionButtonClass}
         >
-          <Eye className="h-4 w-4" aria-hidden="true" />
-          Preview
+          <Eye className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>Preview</span>
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          onClick={onDownload}
-          className="h-11 gap-2 rounded-xl border-violet-200 bg-white/90 px-4 text-slate-700 shadow-sm hover:bg-violet-50"
+          onClick={onShareInvoice}
+          disabled={sharingInvoice}
+          className={`${actionButtonClass} col-span-2 border-emerald-200 text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 sm:col-span-1`}
         >
-          <Download className="h-4 w-4" aria-hidden="true" />
-          Download PDF
+          {sharingInvoice ? (
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
+          ) : (
+            <MessageCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+          )}
+          <span>{sharingInvoice ? "Preparing..." : "WhatsApp invoice"}</span>
         </Button>
 
         {!isFullyPaid && (
           <Button
             type="button"
             onClick={onRecordPayment}
-            className="h-11 gap-2 rounded-xl border border-violet-200 bg-white px-5 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
+            className={`${actionButtonClass} col-span-2 sm:col-span-1`}
           >
-            <Plus className="h-5 w-5" aria-hidden="true" />
-            Record payment
+            <Plus className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>Record payment</span>
           </Button>
         )}
       </div>
@@ -539,7 +572,7 @@ function PageHeader({
   )
 }
 
-function ItemsCard({ bill, items }) {
+function ItemsCard({ bill, items, onExportCSV, onExportPDF }) {
   const totalQty = items.reduce((sum, item) => sum + num(item.quantity), 0)
   const itemsTotal = round2(items.reduce((sum, item) => sum + num(item.total_amount), 0))
   const itemsTaxable = round2(items.reduce((sum, item) => sum + num(item.taxable_amount), 0))
@@ -549,6 +582,28 @@ function ItemsCard({ bill, items }) {
       icon={ShoppingBag}
       title="Bill items"
       description={`${items.length} ${items.length === 1 ? "item" : "items"} · ${totalQty} total quantity`}
+      action={
+        <div className="flex w-full min-w-0 items-center justify-end gap-2 sm:w-auto sm:shrink-0">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onExportCSV}
+            className="h-9 min-w-0 flex-1 gap-1.5 rounded-xl border border-violet-200 bg-white px-2 text-xs font-medium text-slate-700 shadow-sm transition-all hover:-translate-y-px hover:bg-violet-50 hover:text-violet-800 hover:shadow-md sm:flex-none sm:px-3"
+          >
+            <FileSpreadsheet className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>Export CSV</span>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onExportPDF}
+            className="h-9 min-w-0 flex-1 gap-1.5 rounded-xl border border-violet-200 bg-white px-2 text-xs font-medium text-slate-700 shadow-sm transition-all hover:-translate-y-px hover:bg-violet-50 hover:text-violet-800 hover:shadow-md sm:flex-none sm:px-3"
+          >
+            <Download className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>Export PDF</span>
+          </Button>
+        </div>
+      }
     >
       {items.length === 0 ? (
         <EmptyState
@@ -959,6 +1014,32 @@ function PaymentHistoryCard({ bill, payments, totals, isFullyPaid, dueInfo, onAd
 }
 
 function CustomerCard({ bill, customer, shop, totals }) {
+  const [customerPhoto, setCustomerPhoto] = useState("")
+  const [photoFailed, setPhotoFailed] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    setCustomerPhoto("")
+    setPhotoFailed(false)
+
+    const photoValue = String(customer.photo_url || customer.avatar_url || "").trim()
+    if (!photoValue) return () => { active = false }
+
+    if (/^https?:\/\//i.test(photoValue)) {
+      setCustomerPhoto(photoValue)
+      return () => { active = false }
+    }
+
+    const cleanPath = photoValue
+      .replace(/^\/+/, "")
+      .replace(/^avatars\//, "")
+
+    const { data } = supabase.storage.from("avatars").getPublicUrl(cleanPath)
+    if (active) setCustomerPhoto(data?.publicUrl || "")
+
+    return () => { active = false }
+  }, [customer.id, customer.photo_url, customer.avatar_url])
+
   const address = [customer.address, customer.city, customer.state, customer.pincode]
     .filter(Boolean)
     .join(", ")
@@ -1010,7 +1091,19 @@ function CustomerCard({ bill, customer, shop, totals }) {
     >
       <CardContent className="space-y-4 p-5">
         <div className="flex items-center gap-3">
-          <Avatar name={customer.name} className="bg-blue-100 text-blue-700" />
+          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-violet-100 bg-violet-100 text-sm font-bold text-violet-700 shadow-sm">
+            {getInitials(customer.name)}
+            {customerPhoto && !photoFailed && (
+              <img
+                src={customerPhoto}
+                alt={`${customer.name || "Customer"} profile`}
+                loading="lazy"
+                referrerPolicy="no-referrer"
+                onError={() => setPhotoFailed(true)}
+                className="absolute inset-0 h-full w-full rounded-full object-cover"
+              />
+            )}
+          </div>
           <div className="min-w-0">
             <p className="truncate text-base font-bold text-slate-900">
               {customer.name || "Walk-in customer"}
@@ -1040,7 +1133,7 @@ function CustomerCard({ bill, customer, shop, totals }) {
               <Button
                 asChild
                 variant="outline"
-                className="h-10 gap-2 rounded-xl border-violet-200 bg-white text-sm font-semibold text-slate-700 hover:bg-violet-50"
+                className="h-10 gap-2 rounded-xl border-violet-200 bg-white text-sm font-semibold text-slate-700 hover:bg-violet-50 shadow-sm"
               >
                 <a href={`tel:${customer.mobile}`}>
                   <Phone className="h-4 w-4" aria-hidden="true" />
@@ -1056,7 +1149,7 @@ function CustomerCard({ bill, customer, shop, totals }) {
               onClick={sendReminder}
               disabled={totals.amountDue <= 0}
               title={totals.amountDue <= 0 ? "No pending amount" : "Send payment reminder on WhatsApp"}
-              className="h-10 gap-2 rounded-xl border-violet-200 bg-white text-sm font-semibold text-slate-700 hover:bg-violet-50 disabled:opacity-50"
+              className="h-10 gap-2 rounded-xl border-violet-200 bg-white text-sm font-semibold text-slate-700 hover:bg-violet-50 disabled:opacity-50 shadow-sm"
             >
               <MessageCircle className="h-4 w-4" aria-hidden="true" />
               Remind
@@ -1151,7 +1244,7 @@ function AttachmentCard({ url, deleting, onDelete, onPreview }) {
             variant="outline"
             size="sm"
             onClick={onPreview}
-            className="h-9 gap-1.5 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-violet-50"
+            className="h-9 gap-1.5 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-violet-50 shadow-sm"
           >
             <Eye className="h-3.5 w-3.5" aria-hidden="true" />
             Preview
@@ -1164,7 +1257,7 @@ function AttachmentCard({ url, deleting, onDelete, onPreview }) {
             disabled={deleting}
             aria-label="Delete attachment"
             title="Delete attachment"
-            className="h-9 w-9 rounded-xl text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+            className="h-9 w-9 rounded-xl text-rose-600 hover:bg-rose-50 hover:text-rose-700 shadow-sm"
           >
             {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
           </Button>
@@ -1241,7 +1334,7 @@ function DeleteAttachmentDialog({ open, onOpenChange, deleting, onConfirm }) {
             type="button"
             onClick={onConfirm}
             disabled={deleting}
-            className="h-11 w-full rounded-xl bg-rose-600 text-white hover:bg-rose-700 sm:w-auto"
+            className="h-11 w-full rounded-xl bg-rose-600 text-white hover:bg-rose-700 sm:w-auto shadow-sm"
           >
             {deleting ? (
               <>
@@ -1416,7 +1509,7 @@ function RecordPaymentDialog({ open, onClose, bill, status, customer, totals, to
               variant="outline"
               onClick={onClose}
               disabled={saving}
-              className="h-11 rounded-xl border-violet-200 bg-white px-5 text-sm font-medium text-slate-700 hover:bg-violet-50"
+              className="h-11 rounded-xl border-violet-200 bg-white px-5 text-sm font-medium text-slate-700 hover:bg-violet-50 shadow-sm"
             >
               Cancel
             </Button>
@@ -1675,7 +1768,7 @@ function BillPreviewDialog({ open, onOpenChange, bill, items, customer, shop, to
             type="button"
             variant="outline"
             onClick={() => onOpenChange(false)}
-            className="h-10 rounded-xl border-violet-200 bg-white hover:bg-violet-50"
+            className="h-10 gap-2 rounded-xl border border-violet-200 bg-white text-slate-700 hover:bg-violet-50 shadow-sm"
           >
             Close
           </Button>
@@ -1683,7 +1776,7 @@ function BillPreviewDialog({ open, onOpenChange, bill, items, customer, shop, to
             type="button"
             variant="outline"
             onClick={() => window.print()}
-            className="h-10 gap-2 rounded-xl border-violet-200 bg-white hover:bg-violet-50"
+            className="h-10 gap-2 rounded-xl border border-violet-200 bg-white text-slate-700 hover:bg-violet-50 shadow-sm"
           >
             <Printer className="h-4 w-4" aria-hidden="true" />
             Print
@@ -1691,7 +1784,7 @@ function BillPreviewDialog({ open, onOpenChange, bill, items, customer, shop, to
           <Button
             type="button"
             onClick={onDownload}
-            className="h-10 gap-2 rounded-xl border border-violet-200 bg-white text-slate-700 hover:bg-violet-50"
+            className="h-10 gap-2 rounded-xl border border-violet-200 bg-white text-slate-700 hover:bg-violet-50 shadow-sm"
           >
             <Download className="h-4 w-4" aria-hidden="true" />
             Download PDF
@@ -1761,7 +1854,7 @@ function AttachmentPreviewDialog({ open, onOpenChange, url, billNumber }) {
           <Button
             asChild
             variant="outline"
-            className="h-10 gap-2 rounded-xl border-violet-200 bg-white hover:bg-violet-50"
+            className="h-10 gap-2 rounded-xl border-violet-200 bg-white hover:bg-violet-50 shadow-sm"
           >
             <a href={url} target="_blank" rel="noopener noreferrer">
               <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
@@ -1807,6 +1900,7 @@ export default function BillDetail() {
   const [attachmentOpen, setAttachmentOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deletingAttachment, setDeletingAttachment] = useState(false)
+  const [sharingInvoice, setSharingInvoice] = useState(false)
 
   const hasLoaded = useRef(false)
   // Prevents an older (slower) request from overwriting newer data
@@ -2010,6 +2104,181 @@ export default function BillDetail() {
     }
   }
 
+  /**
+   * Opens the WhatsApp chat for the number saved on this invoice.
+   * Full invoice details are prefilled as formatted text; the PDF downloads
+   * and can be attached in the same chat before sending.
+   */
+  async function handleShareInvoice() {
+    if (!bill) return
+
+    const customer = bill.customers || {}
+    const rawCustomerNumber = customer.whatsapp || customer.mobile || ""
+
+    if (!rawCustomerNumber) {
+      toast.error("Is invoice mein customer ka mobile number saved nahi hai.")
+      return
+    }
+
+    const whatsappNumber = normalizeIndianMobile(rawCustomerNumber)
+    if (!whatsappNumber) {
+      toast.error("Invoice customer ka mobile number valid nahi hai. Customer details update karo.")
+      return
+    }
+
+    setSharingInvoice(true)
+
+    try {
+      const shop = bill.shops || currentShop || {}
+
+      const itemLines = items.map((item, index) => {
+        const qty = `${num(item.quantity)} ${item.unit || ""}`.trim()
+        return `${index + 1}. ${item.item_name || "Item"}\n   Qty: ${qty} | Rate: ${formatCurrency(item.rate)} | Discount: ${formatCurrency(item.discount || 0)} | GST: ${num(item.gst_percent)}% | Amount: ${formatCurrency(item.total_amount)}`
+      })
+
+      const paymentLines = payments.map((payment) => {
+        const type = payment.is_refund ? "Refund" : "Payment"
+        const date = payment.payment_date ? formatDate(payment.payment_date) : "Date N/A"
+        return `• ${type}: ${formatCurrency(payment.amount)} | ${payment.payment_mode || "Other"} | ${date}`
+      })
+
+      const messageLines = [
+        `*${shop.name || "SHOP"}*`,
+        shop.address || "",
+        shop.mobile ? `Contact: ${shop.mobile}` : "",
+        shop.gstin ? `GSTIN: ${shop.gstin}` : "",
+        "",
+        "━━━━━━━━━━━━━━━━━━",
+        "*TAX INVOICE / BILL*",
+        "━━━━━━━━━━━━━━━━━━",
+        `*Bill No:* ${bill.bill_number || "—"}`,
+        `*Bill Date:* ${bill.bill_date ? formatDate(bill.bill_date) : "—"}`,
+        `*Due Date:* ${bill.due_date ? formatDate(bill.due_date) : "Not set"}`,
+        `*Status:* ${status.toUpperCase()}`,
+        "",
+        "*BILL TO*",
+        `Customer: ${customer.name || "Walk-in customer"}`,
+        `Mobile: ${rawCustomerNumber}`,
+        customer.address ? `Address: ${customer.address}` : "",
+        customer.city ? `City: ${customer.city}` : "",
+        customer.gstin ? `GSTIN: ${customer.gstin}` : "",
+        "",
+        "━━━━━━━━━━━━━━━━━━",
+        "*ITEM DETAILS*",
+        "━━━━━━━━━━━━━━━━━━",
+        ...(itemLines.length ? itemLines : ["No item details available"]),
+        "",
+        "━━━━━━━━━━━━━━━━━━",
+        "*AMOUNT SUMMARY*",
+        "━━━━━━━━━━━━━━━━━━",
+        `Subtotal: ${formatCurrency(bill.subtotal)}`,
+        ...(num(bill.discount_amount) > 0 ? [`Discount: -${formatCurrency(bill.discount_amount)}`] : []),
+        ...(num(bill.cgst_amount) > 0 ? [`CGST: ${formatCurrency(bill.cgst_amount)}`] : []),
+        ...(num(bill.sgst_amount) > 0 ? [`SGST: ${formatCurrency(bill.sgst_amount)}`] : []),
+        ...(num(bill.igst_amount) > 0 ? [`IGST: ${formatCurrency(bill.igst_amount)}`] : []),
+        ...(num(bill.round_off) !== 0 ? [`Round Off: ${formatCurrency(bill.round_off)}`] : []),
+        `*GRAND TOTAL: ${formatCurrency(totals.grandTotal)}*`,
+        `Advance Adjusted: ${formatCurrency(totals.advanceAdjusted)}`,
+        `Amount Received: ${formatCurrency(totals.amountPaid)}`,
+        `Total Received: ${formatCurrency(totals.totalReceived)}`,
+        `*BALANCE DUE: ${formatCurrency(totals.amountDue)}*`,
+        "",
+        ...(paymentLines.length ? ["*PAYMENT HISTORY*", ...paymentLines, ""] : []),
+        bill.notes ? `*Notes:* ${bill.notes}` : "",
+        "",
+        "Invoice PDF is included separately with these bill details.",
+        "Thank you for your business!",
+      ].filter((line) => line !== null && line !== undefined && line !== "")
+
+      const message = messageLines.join("\n")
+      const blob = createBillPDFBlob(bill, items, shop, customer)
+      const fileName = `${String(bill.bill_number || "Invoice").replace(/[^a-z0-9_-]/gi, "_")}.pdf`
+
+      // Browser wa.me links cannot attach local files. Download PDF, then open
+      // the exact customer chat with the complete formatted message prefilled.
+      const pdfUrl = URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = pdfUrl
+      anchor.download = fileName
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 30000)
+
+      const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`
+      const opened = window.open(whatsappUrl, "_blank")
+      if (!opened) window.location.href = whatsappUrl
+
+      toast.success(`WhatsApp chat opened for ${customer.name || "customer"}`)
+      toast.info(`PDF downloaded: ${fileName}. Attach it in the opened chat, then send both together.`)
+    } catch (error) {
+      console.error("WhatsApp invoice share error:", error)
+      toast.error(error?.message || "Could not prepare WhatsApp invoice")
+    } finally {
+      setSharingInvoice(false)
+    }
+  }
+
+  function handleExportCSV() {
+    if (!bill) return
+
+    const escapeCSV = (value) => {
+      const textValue = value === null || value === undefined ? "" : String(value)
+      return `"${textValue.replace(/"/g, '""')}"`
+    }
+
+    const rows = [
+      ["BILL SUMMARY"],
+      ["Bill Number", bill.bill_number],
+      ["Bill Date", bill.bill_date ? formatDate(bill.bill_date) : ""],
+      ["Due Date", bill.due_date ? formatDate(bill.due_date) : ""],
+      ["Customer", customer?.name || bill.customers?.name || "Walk-in customer"],
+      ["Mobile", customer?.mobile || bill.customers?.mobile || ""],
+      ["Payment Status", status],
+      ["Subtotal", bill.subtotal],
+      ["Discount", bill.discount_amount],
+      ["Taxable Amount", bill.taxable_amount],
+      ["CGST", bill.cgst_amount],
+      ["SGST", bill.sgst_amount],
+      ["IGST", bill.igst_amount],
+      ["Total GST", bill.total_gst],
+      ["Grand Total", totals.grandTotal],
+      ["Amount Paid", totals.amountPaid],
+      ["Advance Adjusted", totals.advanceAdjusted],
+      ["Amount Due", totals.amountDue],
+      [],
+      ["BILL ITEMS"],
+      ["Item", "Description", "Quantity", "Unit", "Rate", "Discount", "Taxable Amount", "GST %", "GST Amount", "Total"],
+      ...items.map((item) => [
+        item.item_name, item.description, item.quantity, item.unit, item.rate,
+        item.discount, item.taxable_amount, item.gst_percent, item.gst_amount, item.total_amount,
+      ]),
+      [],
+      ["PAYMENT HISTORY"],
+      ["Payment Date", "Payment Mode", "Amount", "Type", "Reference", "Notes"],
+      ...payments.map((payment) => [
+        payment.payment_date ? formatDate(payment.payment_date) : "",
+        payment.payment_mode,
+        payment.amount,
+        payment.is_refund ? "Refund" : "Payment",
+        payment.reference_number || payment.transaction_id || "",
+        payment.notes || "",
+      ]),
+    ]
+
+    const csv = "\uFEFF" + rows.map((row) => row.map(escapeCSV).join(",")).join("\r\n")
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement("a")
+    anchor.href = url
+    anchor.download = `${String(bill.bill_number || "bill").replace(/[^a-z0-9_-]/gi, "_")}.csv`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(url)
+    toast.success("Bill CSV exported")
+  }
+
   /* ------------------------------ Render states ---------------------------- */
 
   if (!currentShop) {
@@ -2086,6 +2355,8 @@ export default function BillDetail() {
         onRefresh={() => loadBill(true)}
         onPreview={() => setPreviewOpen(true)}
         onDownload={handleDownloadPDF}
+        onShareInvoice={handleShareInvoice}
+        sharingInvoice={sharingInvoice}
         onRecordPayment={() => setPayOpen(true)}
       />
 
@@ -2150,7 +2421,7 @@ export default function BillDetail() {
 
       <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[1.65fr_1fr]">
         <div className="min-w-0 space-y-4">
-          <ItemsCard bill={bill} items={items} />
+          <ItemsCard bill={bill} items={items} onExportCSV={handleExportCSV} onExportPDF={handleDownloadPDF} />
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <AmountBreakdownCard bill={bill} totals={totals} />
@@ -2248,6 +2519,7 @@ export default function BillDetail() {
         deleting={deletingAttachment}
         onConfirm={handleDeleteAttachment}
       />
+
     </div>
   )
 }
