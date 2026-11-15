@@ -806,6 +806,10 @@ export default function Khata() {
       if (matches.length === 1) {
         if (!prev.mobile) next.mobile = matches[0].mobile
         if (!prev.address) next.address = matches[0].address
+        if (!prev.photo_preview && matches[0].photo) {
+          next.photo_preview = matches[0].photo
+          next.customer_photo = null
+        }
       }
       return next
     })
@@ -910,12 +914,33 @@ export default function Khata() {
         photoUrl = supabase.storage.from("avatars").getPublicUrl(uploadedPath).data.publicUrl
       }
 
+      const profileMobile = form.mobile.trim() || matches.find((row) => row.mobile)?.mobile || null
+      const profileAddress = form.address.trim() || matches.find((row) => row.address)?.address || null
+      const profilePhoto = photoUrl || matches.find((row) => row.customer_photo)?.customer_photo || null
+
+      // Keep the profile consistent on every historical entry for this
+      // independent Khata person. This does not touch Customers or Bills.
+      if (matches.length) {
+        const ids = matches.map((row) => row.id)
+        const { error: profileError } = await supabase
+          .from("khata_entries")
+          .update({
+            customer_name: customerName,
+            mobile: profileMobile,
+            address: profileAddress,
+            customer_photo: profilePhoto,
+          })
+          .eq("shop_id", shopId)
+          .in("id", ids)
+        if (profileError) throw profileError
+      }
+
       const { error } = await supabase.from("khata_entries").insert({
         shop_id: shopId,
         customer_name: customerName,
-        mobile: matches.find((row) => row.mobile)?.mobile || form.mobile.trim() || null,
-        address: form.address.trim() || matches.find((row) => row.address)?.address || null,
-        customer_photo: photoUrl || matches.find((row) => row.customer_photo)?.customer_photo || null,
+        mobile: profileMobile,
+        address: profileAddress,
+        customer_photo: profilePhoto,
         entry_type: form.entry_type,
         amount,
         balance_after: newBalance,

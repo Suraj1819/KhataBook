@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { useShop } from "@/contexts/ShopContext"
 import { supabase } from "@/lib/supabase"
 import { formatCurrency, formatDate } from "@/lib/utils"
+import { exportDashboardPdf, exportRecentBillsCsv, exportRecentBillsPdf } from "@/lib/dashboardPdf"
 
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -27,6 +28,7 @@ import {
   CreditCard,
   Eye,
   FileText,
+  FileSpreadsheet,
   Hourglass,
   IndianRupee,
   Layers,
@@ -1291,6 +1293,59 @@ export default function Dashboard() {
     loadDashboard(true)
   }
 
+  const handleDashboardPdf = () => {
+    try {
+      exportDashboardPdf({
+        shop: currentShop,
+        profile,
+        stats,
+        periodLabel,
+        shortLabel,
+        trend,
+        trendSummary,
+        paymentModes,
+        aging,
+        pendingCustomers,
+        recentBills,
+        recentPayments,
+        collectionRate,
+        averageBillValue,
+        paymentDateColumn: PAYMENT_DATE_COLUMN,
+      })
+      toast.success("Dashboard PDF exported")
+    } catch (error) {
+      console.error("Dashboard PDF export failed:", error)
+      toast.error("Could not export dashboard PDF", { description: error?.message })
+    }
+  }
+
+  const handleRecentBillsExport = async (format) => {
+    try {
+      const allBills = await fetchAllRows(() =>
+        applyRange(
+          supabase
+            .from("bills")
+            .select("id, bill_number, bill_date, grand_total, amount_due, payment_status, customers(name, photo_url)")
+            .eq("shop_id", shopId),
+          "bill_date",
+          range
+        ).order("created_at", { ascending: false })
+      )
+
+      const payload = { bills: allBills, shop: currentShop, periodLabel }
+      if (format === "csv") exportRecentBillsCsv(payload)
+      else exportRecentBillsPdf(payload)
+      toast.success(`Recent bills ${format.toUpperCase()} exported`, {
+        description: `${allBills.length.toLocaleString("en-IN")} bills included.`,
+      })
+    } catch (error) {
+      console.error("Recent bills export failed:", error)
+      toast.error(`Could not export recent bills ${format.toUpperCase()}`, {
+        description: error?.message,
+      })
+    }
+  }
+
   /* --------------------------------------------------
      DERIVED NUMBERS
   -------------------------------------------------- */
@@ -1581,6 +1636,15 @@ export default function Dashboard() {
               All bills
             </Link>
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleDashboardPdf}
+            className="h-11 w-full justify-center gap-2 rounded-xl border border-violet-200 bg-white/90 px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50 sm:w-auto sm:px-4"
+          >
+            <FileText className="h-4 w-4" aria-hidden="true" />
+            Dashboard PDF
+          </Button>
 
           <Button
             asChild
@@ -1818,17 +1882,41 @@ export default function Dashboard() {
               title="Recent bills"
               description={`Newest first · ${shortLabel}`}
               action={
-                <Button
-                  asChild
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 gap-2 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
-                >
-                  <Link to="/bills">
-                    View all
-                    <ChevronRight className="h-4 w-4" aria-hidden="true" />
-                  </Link>
-                </Button>
+                <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleRecentBillsExport("csv")}
+                    disabled={recentLoading || recentCount === 0}
+                    className="h-10 gap-1.5 rounded-xl border border-violet-200 bg-white/90 px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50"
+                  >
+                    <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
+                    Export CSV
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleRecentBillsExport("pdf")}
+                    disabled={recentLoading || recentCount === 0}
+                    className="h-10 gap-1.5 rounded-xl border border-violet-200 bg-white/90 px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50"
+                  >
+                    <FileText className="h-4 w-4" aria-hidden="true" />
+                    Export PDF
+                  </Button>
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className="col-span-2 h-10 gap-2 rounded-xl border border-violet-200 bg-white/90 px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50 sm:col-span-1"
+                  >
+                    <Link to="/bills">
+                      View all
+                      <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                    </Link>
+                  </Button>
+                </div>
               }
             />
 

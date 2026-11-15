@@ -3,7 +3,6 @@ import { Link, useNavigate, useParams } from "react-router-dom"
 import { useShop } from "@/contexts/ShopContext"
 import { supabase } from "@/lib/supabase"
 import { formatCurrency, formatDate } from "@/lib/utils"
-import { downloadKhataDetailsPDF } from "@/lib/khataDetailsPdf"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -42,7 +41,6 @@ import {
   Clock3,
   Eye,
   FileText,
-  FileDown,
   Loader2,
   MapPin,
   Mail,
@@ -993,11 +991,14 @@ export default function KhataDetail() {
       if (editForm.photo) {
         uploaded = await uploadPhoto(editForm.photo)
         photoUrl = uploaded.url
+      } else if (!editForm.photo_preview) {
+        // An empty preview means the user explicitly removed the current photo.
+        photoUrl = null
       }
 
       await updateAllRows(buildCustomerPayload(editForm, photoUrl))
 
-      if (uploaded && oldUrl) await removeStoredPhoto(oldUrl)
+      if (oldUrl && oldUrl !== photoUrl) await removeStoredPhoto(oldUrl)
 
       toast.success("Customer updated")
       setEditOpen(false)
@@ -1232,32 +1233,6 @@ export default function KhataDetail() {
           <Button
             type="button"
             variant="outline"
-            disabled={periodSummary.entries.length === 0}
-            onClick={() => {
-              try {
-                downloadKhataDetailsPDF({
-                  customer,
-                  entries: periodSummary.entries,
-                  summary: periodSummary,
-                  shop: currentShop || {},
-                  periodLabel,
-                })
-                toast.success("Customer statement exported")
-              } catch (error) {
-                toast.error("Could not export statement", {
-                  description: error?.message || "Please try again.",
-                })
-              }
-            }}
-            className="h-11 gap-2 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-violet-300 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <FileDown className="h-4 w-4 shrink-0" />
-            <span>Export PDF</span>
-          </Button>
-
-          <Button
-            type="button"
-            variant="outline"
             onClick={() => loadEntries(true)}
             disabled={refreshing}
             aria-label={refreshing ? "Refreshing ledger" : "Refresh ledger"}
@@ -1310,9 +1285,9 @@ export default function KhataDetail() {
 
       {/* PROFILE */}
 
-      <Card className="overflow-hidden rounded-[20px] border border-white/80 bg-white/85 shadow-[0_5px_18px_rgba(80,65,130,0.07)] backdrop-blur-sm">
-        <div className="flex flex-col justify-between gap-5 p-4 sm:p-6 md:flex-row md:items-center">
-          <div className="flex min-w-0 items-center gap-4 sm:gap-5">
+      <Card className="w-full min-w-0 max-w-full overflow-hidden rounded-[20px] border border-white/80 bg-white/90 shadow-[0_5px_18px_rgba(80,65,130,0.07)] backdrop-blur-sm">
+        <div className="flex min-w-0 flex-col justify-between gap-4 p-4 sm:gap-5 sm:p-6 md:flex-row md:items-center">
+          <div className="flex w-full min-w-0 items-start gap-3 sm:items-center sm:gap-5">
             {/* Avatar with photo menu */}
             <div className="relative shrink-0" ref={photoMenuRef}>
               <button
@@ -1323,7 +1298,7 @@ export default function KhataDetail() {
                 onClick={() => setPhotoMenuOpen((open) => !open)}
                 className="group relative block rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
               >
-                <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-slate-100 shadow-md sm:h-24 sm:w-24">
+                <div className="flex h-[72px] w-[72px] items-center justify-center overflow-hidden rounded-full border-4 border-white bg-slate-100 shadow-md sm:h-24 sm:w-24">
                   {uploadingPhoto || deletingPhoto ? (
                     <Loader2 className="h-8 w-8 animate-spin text-violet-700" />
                   ) : (
@@ -1404,12 +1379,12 @@ export default function KhataDetail() {
                 </div>
               )}
 
-              <div className="mt-2 flex flex-col items-center gap-1.5">
+              <div className="mt-2 flex flex-col items-center gap-1 sm:gap-1.5">
                 <button
                   type="button"
                   onClick={() => quickPhotoInput.current?.click()}
                   disabled={uploadingPhoto || deletingPhoto}
-                  className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-violet-200 bg-white px-2.5 text-[11px] font-semibold text-slate-700 shadow-sm transition-colors hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-8 max-w-[88px] items-center justify-center gap-1 rounded-lg border border-violet-200 bg-white px-2 text-[10px] font-semibold text-slate-700 shadow-sm transition-colors hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50 sm:max-w-none sm:gap-1.5 sm:px-2.5 sm:text-[11px]"
                 >
                   <Camera className="h-3.5 w-3.5" aria-hidden="true" />
                   {customer.photo ? "Change photo" : "Upload photo"}
@@ -1446,7 +1421,7 @@ export default function KhataDetail() {
                 </Button>
               </div>
 
-              <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-600">
+              <div className="mt-2 flex min-w-0 flex-wrap gap-1.5 text-[11px] text-slate-600 sm:gap-2 sm:text-xs">
                 {customer.mobile ? (
                   <span className="flex items-center gap-1.5 rounded-lg border border-[#eeecf5] bg-[#faf9ff] px-2.5 py-1.5">
                     <Phone className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
@@ -1459,9 +1434,9 @@ export default function KhataDetail() {
                 )}
 
                 {customer.address && (
-                  <span className="flex items-center gap-1.5 rounded-lg border border-[#eeecf5] bg-[#faf9ff] px-2.5 py-1.5">
-                    <MapPin className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
-                    {customer.address}
+                  <span className="flex min-w-0 max-w-full items-start gap-1.5 rounded-lg border border-[#eeecf5] bg-[#faf9ff] px-2.5 py-1.5 leading-snug">
+                    <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden="true" />
+                    <span className="min-w-0 break-words">{customer.address}</span>
                   </span>
                 )}
 
@@ -1486,11 +1461,11 @@ export default function KhataDetail() {
           </div>
 
           <div
-            className={`shrink-0 rounded-2xl border px-5 py-4 md:min-w-[210px] md:text-right ${tone.box}`}
+            className={`w-full min-w-0 shrink-0 rounded-2xl border px-4 py-3.5 sm:px-5 sm:py-4 md:w-auto md:min-w-[210px] md:text-right ${tone.box}`}
           >
             <p className="text-xs font-semibold text-slate-500">Current balance</p>
             <p
-              className={`mt-1 text-[30px] font-extrabold leading-none tracking-tight tabular-nums ${tone.text}`}
+              className={`mt-1 break-words text-[clamp(1.8rem,8vw,2.25rem)] font-extrabold leading-none tracking-tight tabular-nums ${tone.text}`}
             >
               {formatCurrency(Math.abs(customer.balance))}
             </p>
@@ -1499,11 +1474,11 @@ export default function KhataDetail() {
         </div>
 
         {/* Quick actions */}
-        <div className="grid grid-cols-2 overflow-hidden border-t border-[#eeecf5] sm:grid-cols-4">
+        <div className="grid min-w-0 grid-cols-2 overflow-hidden border-t border-[#eeecf5] sm:grid-cols-4">
           {hasMobile ? (
             <a
               href={`tel:+91${digits}`}
-              className="flex min-h-[58px] min-w-0 items-center justify-center gap-2 border-b border-r border-[#eeecf5] px-2 py-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-[#faf9ff] hover:text-violet-700 sm:border-b-0 sm:text-sm"
+              className="flex min-h-[62px] min-w-0 items-center justify-center gap-2 border-b border-r border-[#eeecf5] px-2 py-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-[#faf9ff] hover:text-violet-700 sm:border-b-0 sm:text-sm"
             >
               <Phone className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span className="min-w-0 break-words text-center">Call</span>
@@ -1511,7 +1486,7 @@ export default function KhataDetail() {
           ) : (
             <span
               aria-disabled="true"
-              className="flex min-h-[58px] min-w-0 items-center justify-center gap-2 border-b border-r border-[#eeecf5] px-2 py-3 text-xs font-semibold text-slate-300 sm:border-b-0 sm:text-sm"
+              className="flex min-h-[62px] min-w-0 items-center justify-center gap-2 border-b border-r border-[#eeecf5] px-2 py-3 text-xs font-semibold text-slate-300 sm:border-b-0 sm:text-sm"
             >
               <Phone className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span className="min-w-0 break-words text-center">Call</span>
@@ -1523,7 +1498,7 @@ export default function KhataDetail() {
               href={whatsappHref}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex min-h-[58px] min-w-0 items-center justify-center gap-2 border-b border-[#eeecf5] px-2 py-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-[#25D366]/10 hover:text-[#128C7E] sm:border-b-0 sm:border-r sm:text-sm"
+              className="flex min-h-[62px] min-w-0 items-center justify-center gap-2 border-b border-[#eeecf5] px-2 py-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-[#25D366]/10 hover:text-[#128C7E] sm:border-b-0 sm:border-r sm:text-sm"
             >
               <MessageCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span className="min-w-0 break-words text-center">Send reminder</span>
@@ -1531,7 +1506,7 @@ export default function KhataDetail() {
           ) : (
             <span
               aria-disabled="true"
-              className="flex min-h-[58px] min-w-0 items-center justify-center gap-2 border-b border-[#eeecf5] px-2 py-3 text-xs font-semibold text-slate-300 sm:border-b-0 sm:border-r sm:text-sm"
+              className="flex min-h-[62px] min-w-0 items-center justify-center gap-2 border-b border-[#eeecf5] px-2 py-3 text-xs font-semibold text-slate-300 sm:border-b-0 sm:border-r sm:text-sm"
             >
               <MessageCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span className="min-w-0 break-words text-center">Send reminder</span>
@@ -1541,7 +1516,7 @@ export default function KhataDetail() {
           <button
             type="button"
             onClick={() => setProfileOpen(true)}
-            className="flex min-h-[58px] min-w-0 items-center justify-center gap-2 border-r border-[#eeecf5] px-2 py-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-[#faf9ff] hover:text-violet-700 sm:text-sm"
+            className="flex min-h-[62px] min-w-0 items-center justify-center gap-2 border-r border-[#eeecf5] px-2 py-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-[#faf9ff] hover:text-violet-700 sm:text-sm"
           >
             <Eye className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span className="min-w-0 break-words text-center">View profile</span>
@@ -1550,7 +1525,7 @@ export default function KhataDetail() {
           <button
             type="button"
             onClick={openEditCustomer}
-            className="flex min-h-[58px] min-w-0 items-center justify-center gap-2 px-2 py-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-[#faf9ff] hover:text-violet-700 sm:text-sm"
+            className="flex min-h-[62px] min-w-0 items-center justify-center gap-2 px-2 py-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-[#faf9ff] hover:text-violet-700 sm:text-sm"
           >
             <Pencil className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span className="min-w-0 break-words text-center">Edit</span>
@@ -2663,6 +2638,21 @@ function EditCustomerDialog({
                     disabled={saving}
                   />
                 </label>
+                {form.photo_preview && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (saving) return
+                      update("photo", null)
+                      update("photo_preview", "")
+                    }}
+                    disabled={saving}
+                    className="mt-2 ml-2 inline-flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Remove photo
+                  </button>
+                )}
               </div>
             </div>
 

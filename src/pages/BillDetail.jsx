@@ -4,6 +4,8 @@ import { useShop } from "@/contexts/ShopContext"
 import { supabase } from "@/lib/supabase"
 import { formatCurrency, formatDate, PAYMENT_MODES } from "@/lib/utils"
 import { generateBillPDF, createBillPDFBlob } from "@/lib/pdf"
+import { jsPDF } from "jspdf"
+import autoTable from "jspdf-autotable"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -43,6 +45,7 @@ import {
   Eye,
   FileText,
   FileSpreadsheet,
+  FileDown,
   Image as ImageIcon,
   IndianRupee,
   Loader2,
@@ -886,46 +889,427 @@ function PaymentSummaryCard({ totals, isFullyPaid, dueInfo, onRecordPayment }) {
   )
 }
 
-function PaymentHistoryCard({ bill, payments, totals, isFullyPaid, dueInfo, onAddPayment }) {
+function PaymentHistoryCard({ bill, payments, advanceAllocations = [], totals, isFullyPaid, dueInfo, onAddPayment, shop, customer }) {
   const events = useMemo(() => {
-    const sorted = [...payments].sort((a, b) => {
-      const byDate = String(a.payment_date || "").localeCompare(String(b.payment_date || ""))
-      return byDate !== 0 ? byDate : String(a.created_at || "").localeCompare(String(b.created_at || ""))
+    const allocatedTotal = round2(
+      advanceAllocations.reduce((sum, allocation) => sum + num(allocation.amount), 0)
+    )
+    // Older bills may have an advance_adjusted value without allocation rows.
+    // Preserve that legacy amount as one fallback event, without duplicating newer rows.
+    const legacyAdvance = round2(Math.max(0, totals.advanceAdjusted - allocatedTotal))
+
+    const transactions = [
+      ...advanceAllocations.map((allocation) => ({
+        key: `advance-${allocation.id}`,
+        type: "advance",
+        title: "Advance adjusted",
+        date: allocation.created_at?.slice(0, 10) || bill.bill_date,
+        stamp: allocation.created_at || "",
+        amount: num(allocation.amount),
+      })),
+      ...payments.map((payment) => ({
+        key: `payment-${payment.id}`,
+        type: payment.is_refund ? "refund" : "payment",
+        title: `${payment.is_refund ? "Refund" : "Payment"} · ${payment.payment_mode || "Other"}`,
+        date: payment.payment_date,
+        stamp: payment.created_at || "",
+        amount: num(payment.amount),
+      })),
+    ]
+
+    if (legacyAdvance > 0.009) {
+      transactions.push({
+        key: "advance-legacy",
+        type: "advance",
+        title: "Advance adjusted",
+        date: bill.bill_date,
+        stamp: "",
+        amount: legacyAdvance,
+      })
+    }
+
+    transactions.sort((a, b) => {
+      const byDate = String(a.date || "").localeCompare(String(b.date || ""))
+      if (byDate) return byDate
+      const byStamp = String(a.stamp || "").localeCompare(String(b.stamp || ""))
+      if (byStamp) return byStamp
+      return (a.type === "advance" ? 0 : 1) - (b.type === "advance" ? 0 : 1)
     })
 
-    let balance = round2(totals.grandTotal - totals.advanceAdjusted)
+    let balance = round2(totals.grandTotal)
     const list = [
       { key: "issued", type: "issued", title: "Bill issued", date: bill.bill_date, amount: totals.grandTotal },
     ]
 
-    if (totals.advanceAdjusted > 0) {
-      list.push({
-        key: "advance",
-        type: "advance",
-        title: "Advance adjusted",
-        date: bill.bill_date,
-        amount: totals.advanceAdjusted,
-        balance,
-      })
-    }
-
-    sorted.forEach((payment) => {
-      const amount = num(payment.amount)
-      const refund = Boolean(payment.is_refund)
-      balance = refund ? round2(balance + amount) : Math.max(0, round2(balance - amount))
-
-      list.push({
-        key: payment.id,
-        type: refund ? "refund" : "payment",
-        title: `${refund ? "Refund" : "Payment"} · ${payment.payment_mode || "Other"}`,
-        date: payment.payment_date,
-        amount,
-        balance,
-      })
+    transactions.forEach((transaction) => {
+      const isRefund = transaction.type === "refund"
+      balance = isRefund
+        ? round2(balance + transaction.amount)
+        : Math.max(0, round2(balance - transaction.amount))
+      list.push({ ...transaction, balance })
     })
 
     return list
-  }, [bill.bill_date, payments, totals])
+  }, [bill.bill_date, payments, advanceAllocations, totals])
+
+  function exportHistoryCSV() {
+    try {
+      const safeFileName = (value) =>
+        (String(value || "Bill").trim() || "Bill")
+          .replace(/[\\/:*?"<>|]+/g, "-")
+          .replace(/\s+/g, "_")
+
+      // Keep numeric cells numeric in Excel/Google Sheets, while protecting
+      // text cells from CSV formula injection.
+      const csvCell = (value) => {
+        if (value === null || value === undefined) return '""'
+        if (typeof value === "number" && Number.isFinite(value)) return String(value)
+
+        let textValue = String(value)
+        if (/^[\s]*[=+\-@\t\r]/.test(textValue)) textValue = `'${textValue}`
+        return `"${textValue.replace(/"/g, '""')}"`
+      }
+
+      const paymentById = new Map((payments || []).map((payment) => [String(payment.id), payment]))
+      const allocationById = new Map((advanceAllocations || []).map((allocation) => [String(allocation.id), allocation]))
+
+      const rows = [
+        ["KHAATAPRO - PAYMENT & ADVANCE HISTORY"],
+        ["Report Generated", formatDate(getLocalDateString())],
+        [],
+        ["SHOP DETAILS"],
+        ["Shop Name", shop?.name || "Shop"],
+        ["Mobile", shop?.mobile || ""],
+        ["Email", shop?.email || ""],
+        ["Address", [shop?.address, shop?.city, shop?.state, shop?.pincode].filter(Boolean).join(", ")],
+        ["GSTIN", shop?.gstin || ""],
+        [],
+        ["BILL & CUSTOMER DETAILS"],
+        ["Bill Number", bill.bill_number || ""],
+        ["Bill Date", bill.bill_date ? formatDate(bill.bill_date) : ""],
+        ["Due Date", bill.due_date ? formatDate(bill.due_date) : ""],
+        ["Customer Name", customer?.name || bill.customers?.name || "Walk-in customer"],
+        ["Customer Mobile", customer?.mobile || bill.customers?.mobile || ""],
+        ["Customer GSTIN", customer?.gstin || bill.customers?.gstin || ""],
+        ["Payment Status", totals.amountDue <= 0 ? "Paid" : "Pending"],
+        [],
+        ["TRANSACTION LEDGER"],
+        [
+          "S. No.",
+          "Transaction Date",
+          "Transaction Type",
+          "Description",
+          "Payment Mode",
+          "Reference / Transaction ID",
+          "Notes",
+          "Debit / Credit Amount (Rs.)",
+          "Running Balance (Rs.)",
+          "Record ID",
+        ],
+      ]
+
+      const transactionRows = events.map((event, index) => {
+        const eventKey = String(event.key || "")
+        const paymentId = eventKey.startsWith("payment-") ? eventKey.slice("payment-".length) : ""
+        const allocationId = eventKey.startsWith("advance-") && eventKey !== "advance-legacy"
+          ? eventKey.slice("advance-".length)
+          : ""
+        const payment = paymentId ? paymentById.get(paymentId) : null
+        const allocation = allocationId ? allocationById.get(allocationId) : null
+
+        const transactionType = {
+          issued: "Bill Issued",
+          advance: "Advance Adjusted",
+          payment: "Payment Received",
+          refund: "Refund",
+        }[event.type] || event.title || "Transaction"
+
+        const signedAmount = event.type === "refund"
+          ? -Number(event.amount || 0)
+          : event.type === "issued"
+            ? Number(event.amount || 0)
+            : Number(event.amount || 0)
+
+        return [
+          index + 1,
+          event.date ? formatDate(event.date) : "",
+          transactionType,
+          event.title || "",
+          payment?.payment_mode || (event.type === "advance" ? "Customer Advance" : ""),
+          payment?.reference_number || payment?.transaction_id || allocation?.advance_id || "",
+          payment?.notes || allocation?.notes || "",
+          Number.isFinite(signedAmount) ? signedAmount : 0,
+          event.type === "issued" ? Number(event.amount || 0) : Number(event.balance || 0),
+          payment?.id || allocation?.id || "",
+        ]
+      })
+
+      rows.push(...transactionRows)
+      rows.push(
+        [],
+        ["BILL SUMMARY"],
+        ["Particulars", "Amount (Rs.)"],
+        ["Subtotal", Number(bill.subtotal || 0)],
+        ["Discount", Number(bill.discount_amount || 0)],
+        ["Taxable Amount", Number(bill.taxable_amount || 0)],
+        ["CGST", Number(bill.cgst_amount || 0)],
+        ["SGST", Number(bill.sgst_amount || 0)],
+        ["IGST", Number(bill.igst_amount || 0)],
+        ["Grand Total", Number(totals.grandTotal || 0)],
+        ["Advance Adjusted", Number(totals.advanceAdjusted || 0)],
+        ["Payments Received", Number(totals.amountPaid || 0)],
+        ["Pending Amount", Number(totals.amountDue || 0)],
+        [],
+        ["Note", "Amounts are in INR. Positive transaction amounts represent bill value, advance adjustment or payment; refunds are negative."],
+      )
+
+      // UTF-8 BOM improves Hindi/Unicode compatibility in Excel. The sep hint
+      // tells desktop Excel to use commas as delimiters for this file.
+      const csv = "\uFEFFsep=,\r\n" + rows.map((row) => row.map(csvCell).join(",")).join("\r\n")
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = url
+      anchor.download = `${safeFileName(bill.bill_number)}-payment-advance-history.csv`
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1500)
+      toast.success("Detailed payment history CSV exported")
+    } catch (error) {
+      console.error("Payment history CSV export error:", error)
+      toast.error(error?.message || "Could not export payment history CSV")
+    }
+  }
+
+  function exportHistoryPDF() {
+    try {
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const pageHeight = doc.internal.pageSize.getHeight()
+      const margin = 10
+      const contentWidth = pageWidth - margin * 2
+      const ink = [17, 24, 39]
+      const muted = [95, 102, 112]
+      const line = [205, 210, 218]
+      const soft = [247, 248, 250]
+      const shopName = shop?.name || "Shop"
+      const customerName = customer?.name || bill.customers?.name || "Walk-in customer"
+      const billNumber = bill.bill_number || "Bill"
+      const safeName = String(billNumber).replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "_")
+
+      const setText = (size = 8, bold = false, color = ink) => {
+        doc.setFont("helvetica", bold ? "bold" : "normal")
+        doc.setFontSize(size)
+        doc.setTextColor(...color)
+      }
+
+      const drawFooter = () => {
+        const pageCount = doc.getNumberOfPages()
+        for (let page = 1; page <= pageCount; page += 1) {
+          doc.setPage(page)
+          doc.setDrawColor(...line)
+          doc.setLineWidth(0.25)
+          doc.line(margin, pageHeight - 16, pageWidth - margin, pageHeight - 16)
+          setText(7.5, true)
+          doc.text("Thank you for your business!", margin, pageHeight - 11.5)
+          setText(6.5, false, muted)
+          const footerAddress = [shop?.address, shop?.city, shop?.state, shop?.pincode].filter(Boolean).join(", ")
+          const footerText = footerAddress ? `${shopName}, ${footerAddress}` : shopName
+          doc.text(doc.splitTextToSize(footerText, 125).slice(0, 2), margin, pageHeight - 8)
+          setText(7, true)
+          doc.text("E. & O.E.", pageWidth - margin - 22, pageHeight - 11.5, { align: "right" })
+          setText(7, false, muted)
+          doc.text(`Page ${page} of ${pageCount}`, pageWidth - margin, pageHeight - 11.5, { align: "right" })
+          doc.text("Computer-generated report", pageWidth - margin, pageHeight - 8, { align: "right" })
+        }
+      }
+
+      // ===== INVOICE-STYLE HEADER (matching the supplied monochrome PDF) =====
+      setText(15, true)
+      doc.text("Payment & Advance History", pageWidth / 2, 14, { align: "center" })
+
+      setText(10.5, true)
+      doc.text(`Sold By: ${shopName}`, margin, 24)
+      setText(8, false, muted)
+      let shopY = 29
+      const shopAddress = [shop?.address, shop?.city, shop?.state, shop?.pincode ? `PIN ${shop.pincode}` : ""]
+        .filter(Boolean).join(", ")
+      if (shopAddress) {
+        const addressLines = doc.splitTextToSize(shopAddress, 112)
+        doc.text(addressLines, margin, shopY)
+        shopY += addressLines.length * 4
+      }
+      const shopContacts = [
+        shop?.mobile ? `Mobile: ${shop.mobile}` : "",
+        shop?.email ? `Email: ${shop.email}` : "",
+        shop?.gstin ? `GSTIN: ${shop.gstin}` : "",
+      ].filter(Boolean).join("  |  ")
+      if (shopContacts) {
+        const contactLines = doc.splitTextToSize(shopContacts, 112)
+        doc.text(contactLines, margin, shopY)
+        shopY += contactLines.length * 4
+      }
+
+      const boxW = 62
+      const boxX = pageWidth - margin - boxW
+      doc.setFillColor(...soft)
+      doc.setDrawColor(...line)
+      doc.setLineWidth(0.25)
+      doc.roundedRect(boxX, 19, boxW, 21, 1.8, 1.8, "FD")
+      setText(7, true, muted)
+      doc.text("BILL NUMBER", boxX + 4, 25)
+      setText(10, true)
+      doc.text(String(billNumber), boxX + 4, 32)
+      setText(7, true, muted)
+      doc.text(`STATUS: ${String(bill.payment_status || bill.status || (totals.amountDue <= 0 ? "PAID" : "PENDING")).toUpperCase()}`, boxX + 4, 36)
+
+      let y = Math.max(shopY, 44) + 3
+      doc.setDrawColor(...ink)
+      doc.setLineWidth(0.35)
+      doc.line(margin, y, pageWidth - margin, y)
+
+      // ===== BILL / CUSTOMER / REPORT DETAILS =====
+      y += 7
+      const colGap = 5
+      const colW = (contentWidth - colGap * 2) / 3
+      const col1 = margin
+      const col2 = margin + colW + colGap
+      const col3 = margin + (colW + colGap) * 2
+      const topY = y
+      const bottomY = topY + 27
+      doc.setDrawColor(...line)
+      doc.setLineWidth(0.2)
+      doc.line(col2 - 2.5, topY - 2, col2 - 2.5, bottomY)
+      doc.line(col3 - 2.5, topY - 2, col3 - 2.5, bottomY)
+
+      const drawInfo = (title, pairs, x) => {
+        let yy = topY
+        setText(8.5, true)
+        doc.text(title, x, yy)
+        yy += 5
+        pairs.forEach(([label, value]) => {
+          if (!value) return
+          setText(7.5, true)
+          doc.text(`${label}:`, x, yy)
+          const labelWidth = doc.getTextWidth(`${label}:`) + 1.5
+          setText(7.5, false)
+          const valueLines = doc.splitTextToSize(String(value), colW - labelWidth)
+          doc.text(valueLines, x + labelWidth, yy)
+          yy += Math.max(4, valueLines.length * 3.6)
+        })
+      }
+
+      drawInfo("Bill Details", [
+        ["Bill Date", bill.bill_date ? formatDate(bill.bill_date) : "—"],
+        ["Due Date", bill.due_date ? formatDate(bill.due_date) : "—"],
+        ["Payment Status", totals.amountDue <= 0 ? "Paid" : "Pending"],
+      ], col1)
+      drawInfo("Bill To", [
+        ["Customer", customerName],
+        ["Mobile", customer?.mobile || bill.customers?.mobile || ""],
+        ["GSTIN", customer?.gstin || bill.customers?.gstin || ""],
+      ], col2)
+      drawInfo("Report", [
+        ["Report Date", formatDate(getLocalDateString())],
+        ["Transactions", String(Math.max(0, events.length - 1))],
+        ["Currency", "INR (Rs.)"],
+      ], col3)
+
+      y = bottomY + 5
+      setText(8, false, muted)
+      doc.text(`Transaction records: ${Math.max(0, events.length - 1)}`, margin, y)
+      y += 3
+
+      // ===== TRANSACTION LEDGER =====
+      const historyRows = events.map((event) => [
+        event.date ? formatDate(event.date) : "—",
+        event.title,
+        event.type === "issued"
+          ? `Rs. ${Number(event.amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          : `${event.type === "refund" ? "- " : "+ "}Rs. ${Number(event.amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        event.type === "issued"
+          ? "—"
+          : `Rs. ${Number(event.balance || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      ])
+
+      autoTable(doc, {
+        startY: y,
+        head: [["Date", "Transaction Details", "Amount (Rs.)", "Balance After (Rs.)"]],
+        body: historyRows,
+        theme: "plain",
+        margin: { left: margin, right: margin, top: 16, bottom: 20 },
+        styles: {
+          font: "helvetica",
+          fontSize: 7.5,
+          cellPadding: { top: 2.8, bottom: 2.8, left: 2, right: 2 },
+          textColor: ink,
+          lineWidth: 0,
+          overflow: "linebreak",
+          valign: "middle",
+        },
+        headStyles: {
+          fillColor: [255, 255, 255],
+          textColor: ink,
+          fontStyle: "bold",
+          fontSize: 7,
+          lineColor: line,
+          lineWidth: { bottom: 0.45 },
+        },
+        alternateRowStyles: { fillColor: [250, 250, 251] },
+        columnStyles: {
+          0: { cellWidth: 27 },
+          1: { cellWidth: "auto" },
+          2: { cellWidth: 39, halign: "right" },
+          3: { cellWidth: 42, halign: "right" },
+        },
+        didParseCell: (data) => {
+          if (data.section === "head" && data.column.index > 1) data.cell.styles.halign = "right"
+        },
+        didDrawCell: (data) => {
+          if (data.section === "body") {
+            doc.setDrawColor(...line)
+            doc.setLineWidth(0.18)
+            doc.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + data.cell.width, data.cell.y + data.cell.height)
+          }
+        },
+      })
+
+      // ===== TOTALS SUMMARY =====
+      let summaryY = (doc.lastAutoTable?.finalY || y) + 7
+      const summaryRows = [
+        ["Grand Total", `Rs. ${Number(totals.grandTotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`],
+        ["Advance Adjusted", `Rs. ${Number(totals.advanceAdjusted || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`],
+        ["Payments Received", `Rs. ${Number(totals.amountPaid || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`],
+        ["Balance Due", `Rs. ${Number(totals.amountDue || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`],
+      ]
+
+      autoTable(doc, {
+        startY: summaryY,
+        body: summaryRows,
+        theme: "plain",
+        margin: { left: pageWidth - margin - 86, right: margin, bottom: 20 },
+        styles: { font: "helvetica", fontSize: 8, cellPadding: { top: 2.5, bottom: 2.5, left: 2, right: 2 }, textColor: ink },
+        columnStyles: {
+          0: { cellWidth: 48, fontStyle: "bold" },
+          1: { cellWidth: 38, halign: "right" },
+        },
+        didParseCell: (data) => {
+          if (data.row.index === 3) {
+            data.cell.styles.fillColor = soft
+            data.cell.styles.fontStyle = "bold"
+          }
+        },
+      })
+
+      drawFooter(doc, shopName)
+      doc.save(`${safeName}-payment-history.pdf`)
+      toast.success("Payment history PDF exported")
+    } catch (error) {
+      console.error("Payment history PDF export error:", error)
+      toast.error(error?.message || "Could not export payment history PDF")
+    }
+  }
 
   const dotStyles = {
     issued: "border-slate-300 bg-white",
@@ -940,18 +1324,42 @@ function PaymentHistoryCard({ bill, payments, totals, isFullyPaid, dueInfo, onAd
       title="Payment history"
       description={`${payments.length} ${payments.length === 1 ? "payment" : "payments"} recorded`}
       action={
-        !isFullyPaid && (
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onClick={onAddPayment}
-            className="h-9 shrink-0 gap-2 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm hover:bg-violet-50"
+            onClick={exportHistoryCSV}
+            className="h-9 shrink-0 gap-1.5 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50"
+            title="Export payment history as CSV"
           >
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            Add payment
+            <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
+            <span className="hidden sm:inline">CSV</span>
           </Button>
-        )
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={exportHistoryPDF}
+            className="h-9 shrink-0 gap-1.5 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50"
+            title="Export payment history as PDF"
+          >
+            <FileDown className="h-4 w-4" aria-hidden="true" />
+            <span className="hidden sm:inline">PDF</span>
+          </Button>
+          {!isFullyPaid && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onAddPayment}
+              className="h-9 shrink-0 gap-2 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm hover:bg-violet-50"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Add payment
+            </Button>
+          )}
+        </div>
       }
     >
       <ol className="px-5 py-5">
@@ -1162,11 +1570,56 @@ function CustomerCard({ bill, customer, shop, totals }) {
 }
 
 function ShopCard({ shop }) {
+  const [shopPhoto, setShopPhoto] = useState("")
+  const [photoFailed, setPhotoFailed] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    setShopPhoto("")
+    setPhotoFailed(false)
+
+    const photoValue = String(
+      shop?.logo_url || shop?.photo_url || shop?.profile_pic || shop?.avatar_url || shop?.image_url || ""
+    ).trim()
+
+    if (!photoValue) return () => { active = false }
+
+    if (/^https?:\/\//i.test(photoValue)) {
+      setShopPhoto(photoValue)
+      return () => { active = false }
+    }
+
+    const cleanPath = photoValue.replace(/^\/+/, "")
+    const buckets = ["shop-logos", "avatars", "shop-assets"]
+
+    for (const bucket of buckets) {
+      const { data } = supabase.storage.from(bucket).getPublicUrl(cleanPath)
+      if (data?.publicUrl) {
+        if (active) setShopPhoto(data.publicUrl)
+        break
+      }
+    }
+
+    return () => { active = false }
+  }, [shop?.id, shop?.logo_url, shop?.photo_url, shop?.profile_pic, shop?.avatar_url, shop?.image_url])
+
   return (
     <Panel icon={Store} title="Shop" description="Bill issued by">
       <CardContent className="space-y-4 p-5">
         <div className="flex items-center gap-3">
-          <Avatar name={shop.name} className="bg-emerald-100 text-emerald-700" />
+          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-emerald-100 bg-emerald-100 text-sm font-bold text-emerald-700 shadow-sm">
+            {getInitials(shop?.name)}
+            {shopPhoto && !photoFailed && (
+              <img
+                src={shopPhoto}
+                alt={`${shop?.name || "Shop"} profile`}
+                loading="lazy"
+                referrerPolicy="no-referrer"
+                onError={() => setPhotoFailed(true)}
+                className="absolute inset-0 h-full w-full rounded-full object-cover"
+              />
+            )}
+          </div>
           <div className="min-w-0">
             <p className="truncate text-base font-bold text-slate-900">{shop.name || "Shop"}</p>
             {shop.gstin && (
@@ -1351,32 +1804,75 @@ function DeleteAttachmentDialog({ open, onOpenChange, deleting, onConfirm }) {
   )
 }
 
-function RecordPaymentDialog({ open, onClose, bill, status, customer, totals, today, saving, onSubmit }) {
+function RecordPaymentDialog({ open, onClose, bill, status, customer, totals, today, shopId, saving, onSubmit }) {
   const [amount, setAmount] = useState("")
   const [mode, setMode] = useState("Cash")
   const [paymentDate, setPaymentDate] = useState(today)
+  const [advanceRows, setAdvanceRows] = useState([])
+  const [advanceLoading, setAdvanceLoading] = useState(false)
+  const [advanceAmount, setAdvanceAmount] = useState("0")
+
+  useEffect(() => {
+    let active = true
+    async function loadAvailableAdvances() {
+      if (!open || !shopId || !customer?.id) {
+        setAdvanceRows([])
+        setAdvanceAmount("0")
+        return
+      }
+      setAdvanceLoading(true)
+      try {
+        const { data, error } = await supabase
+          .from("customer_advances")
+          .select("id, amount, remaining_amount, created_at")
+          .eq("shop_id", shopId)
+          .eq("customer_id", customer.id)
+          .gt("remaining_amount", 0)
+          .order("created_at", { ascending: true })
+        if (error) throw error
+        if (active) setAdvanceRows(data || [])
+      } catch (error) {
+        console.error("Load customer advances error:", error)
+        if (active) {
+          setAdvanceRows([])
+          toast.error("Could not load customer advance", { description: error.message })
+        }
+      } finally {
+        if (active) setAdvanceLoading(false)
+      }
+    }
+    loadAvailableAdvances()
+    return () => { active = false }
+  }, [open, shopId, customer?.id])
 
   useEffect(() => {
     if (open) {
       setAmount(String(totals.amountDue || 0))
       setMode("Cash")
       setPaymentDate(today)
+      setAdvanceAmount("0")
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   const numericAmount = Number(amount)
+  const numericAdvance = Number(advanceAmount)
+  const availableAdvance = round2(advanceRows.reduce((sum, row) => sum + num(row.remaining_amount), 0))
+  const advanceValid =
+    Number.isFinite(numericAdvance) && numericAdvance >= 0 && numericAdvance <= availableAdvance
   const amountValid =
-    Number.isFinite(numericAmount) && numericAmount > 0 && numericAmount <= totals.amountDue
+    Number.isFinite(numericAmount) && numericAmount >= 0 &&
+    round2(numericAmount + numericAdvance) <= totals.amountDue &&
+    (numericAmount > 0 || numericAdvance > 0)
   const minDate = bill.bill_date ? bill.bill_date.slice(0, 10) : undefined
   const dateValid = Boolean(paymentDate) && paymentDate <= today && (!minDate || paymentDate >= minDate)
-  const isValid = amountValid && dateValid
-  const remainingAfter = amountValid ? round2(totals.amountDue - numericAmount) : null
+  const isValid = amountValid && advanceValid && dateValid
+  const remainingAfter = amountValid ? round2(totals.amountDue - numericAmount - numericAdvance) : null
 
   function handleSubmit(event) {
     event.preventDefault()
     if (!isValid) return
-    onSubmit(round2(numericAmount), mode, paymentDate)
+    onSubmit(round2(numericAmount), mode, paymentDate, round2(numericAdvance))
   }
 
   return (
@@ -1418,6 +1914,57 @@ function RecordPaymentDialog({ open, onClose, bill, status, customer, totals, to
               </div>
             </div>
 
+            {customer.id && (
+              <div className="space-y-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-blue-900">Customer advance available</p>
+                    <p className="mt-0.5 text-xs text-blue-700">
+                      {advanceLoading ? "Checking advance balance…" : "Use the customer's previously received advance"}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-base font-extrabold tabular-nums text-blue-800">
+                    {formatCurrency(availableAdvance)}
+                  </span>
+                </div>
+                {!advanceLoading && availableAdvance > 0 ? (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="advance-adjustment" className="text-[13px] font-medium text-blue-900">
+                      Adjust from advance (₹)
+                    </Label>
+                    <Input
+                      id="advance-adjustment"
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      max={Math.min(availableAdvance, totals.amountDue)}
+                      step="0.01"
+                      value={advanceAmount}
+                      onChange={(event) => {
+                        const nextAdvance = event.target.value
+                        setAdvanceAmount(nextAdvance)
+                        const nextValue = Number(nextAdvance)
+                        if (Number.isFinite(nextValue) && nextValue >= 0) {
+                          setAmount((current) => {
+                            const currentAmount = Number(current)
+                            const maxCash = Math.max(0, round2(totals.amountDue - nextValue))
+                            return String(Math.min(Number.isFinite(currentAmount) ? currentAmount : 0, maxCash))
+                          })
+                        }
+                      }}
+                      className={fieldClass}
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => setAdvanceAmount("0")} className="rounded-full border border-blue-200 bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100">Don't use</button>
+                      <button type="button" onClick={() => setAdvanceAmount(String(round2(Math.min(availableAdvance, totals.amountDue))))} className="rounded-full border border-blue-200 bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100">Use maximum</button>
+                    </div>
+                  </div>
+                ) : !advanceLoading ? (
+                  <p className="text-xs text-slate-500">No unused advance is available for this customer.</p>
+                ) : null}
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <Label htmlFor="payment-amount" className="text-[13px] font-medium text-slate-700">
                 Payment amount (₹)
@@ -1426,8 +1973,8 @@ function RecordPaymentDialog({ open, onClose, bill, status, customer, totals, to
                 id="payment-amount"
                 type="number"
                 inputMode="decimal"
-                min="0.01"
-                max={totals.amountDue}
+                min="0"
+                max={Math.max(0, round2(totals.amountDue - (advanceValid ? numericAdvance : 0)))}
                 step="0.01"
                 required
                 autoFocus
@@ -1436,9 +1983,9 @@ function RecordPaymentDialog({ open, onClose, bill, status, customer, totals, to
                 className={fieldClass}
                 placeholder="Enter amount"
               />
-              {numericAmount > totals.amountDue && (
+              {(!advanceValid || (Number.isFinite(numericAmount) && round2(numericAmount + numericAdvance) > totals.amountDue)) && (
                 <p className="text-xs text-rose-600">
-                  Amount cannot exceed {formatCurrency(totals.amountDue)}.
+                  Payment plus advance cannot exceed the pending amount of {formatCurrency(totals.amountDue)}.
                 </p>
               )}
               <div className="flex flex-wrap gap-2 pt-1">
@@ -1491,7 +2038,7 @@ function RecordPaymentDialog({ open, onClose, bill, status, customer, totals, to
 
             {remainingAfter !== null && (
               <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3">
-                <span className="text-xs font-semibold text-emerald-800">Balance after this payment</span>
+                <span className="text-xs font-semibold text-emerald-800">Balance after payment and advance</span>
                 <span
                   className={`text-sm font-bold tabular-nums ${
                     remainingAfter === 0 ? "text-emerald-700" : "text-slate-900"
@@ -1887,6 +2434,7 @@ export default function BillDetail() {
   const [bill, setBill] = useState(null)
   const [items, setItems] = useState([])
   const [payments, setPayments] = useState([])
+  const [advanceAllocations, setAdvanceAllocations] = useState([])
 
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -1914,6 +2462,7 @@ export default function BillDetail() {
     setBill(null)
     setItems([])
     setPayments([])
+    setAdvanceAllocations([])
     setLoadError("")
     setLoading(true)
   }, [id, shopId])
@@ -1932,7 +2481,7 @@ export default function BillDetail() {
       setLoadError("")
 
       try {
-        const [billRes, itemsRes, paymentsRes] = await Promise.all([
+        const [billRes, itemsRes, paymentsRes, allocationsRes] = await Promise.all([
           supabase
             .from("bills")
             .select("*, customers(*), shops(*)")
@@ -1952,11 +2501,18 @@ export default function BillDetail() {
             .eq("bill_id", id)
             .eq("shop_id", shopId)
             .order("payment_date", { ascending: false }),
+
+          supabase
+            .from("advance_allocations")
+            .select("id, advance_id, bill_id, amount, created_at")
+            .eq("bill_id", id)
+            .order("created_at", { ascending: true }),
         ])
 
         if (billRes.error) throw billRes.error
         if (itemsRes.error) throw itemsRes.error
         if (paymentsRes.error) throw paymentsRes.error
+        if (allocationsRes.error) throw allocationsRes.error
 
         // A newer request has started — ignore this result
         if (requestId !== requestRef.current) return
@@ -1964,6 +2520,7 @@ export default function BillDetail() {
         setBill(billRes.data || null)
         setItems(itemsRes.data || [])
         setPayments(paymentsRes.data || [])
+        setAdvanceAllocations(allocationsRes.data || [])
         setLastUpdated(new Date())
         hasLoaded.current = true
       } catch (error) {
@@ -1999,7 +2556,7 @@ export default function BillDetail() {
 
   /* -------------------------------- Actions -------------------------------- */
 
-  async function handleRecordPayment(amount, paymentMode, paymentDate) {
+  async function handleRecordPayment(amount, paymentMode, paymentDate, advanceAmount = 0) {
     if (!bill || !shopId) return
 
     setSaving(true)
@@ -2015,28 +2572,85 @@ export default function BillDetail() {
       if (latestError) throw latestError
 
       const latestTotals = computeTotals(latest)
-      if (amount > latestTotals.amountDue) {
+      const advanceToUse = round2(advanceAmount)
+      if (amount + advanceToUse > latestTotals.amountDue + 0.009) {
         throw new Error("The pending amount has changed. Refresh and try again.")
+      }
+      if (amount <= 0 && advanceToUse <= 0) {
+        throw new Error("Enter a payment amount or choose an advance amount.")
+      }
+
+      let remainingAdvance = advanceToUse
+      if (advanceToUse > 0) {
+        const { data: advances, error: advanceError } = await supabase
+          .from("customer_advances")
+          .select("id, remaining_amount")
+          .eq("shop_id", shopId)
+          .eq("customer_id", latest.customer_id)
+          .gt("remaining_amount", 0)
+          .order("created_at", { ascending: true })
+        if (advanceError) throw advanceError
+
+        const availableNow = round2((advances || []).reduce((sum, row) => sum + num(row.remaining_amount), 0))
+        if (advanceToUse > availableNow) {
+          throw new Error("Customer advance balance changed. Refresh and try again.")
+        }
+
+        for (const advance of advances || []) {
+          if (remainingAdvance <= 0) break
+          const available = round2(advance.remaining_amount)
+          const use = round2(Math.min(available, remainingAdvance))
+          if (use <= 0) continue
+
+          const { error: allocationError } = await supabase
+            .from("advance_allocations")
+            .insert({ advance_id: advance.id, bill_id: latest.id, amount: use })
+          if (allocationError) throw allocationError
+
+          const { error: advanceUpdateError } = await supabase
+            .from("customer_advances")
+            .update({ remaining_amount: round2(available - use) })
+            .eq("id", advance.id)
+            .eq("shop_id", shopId)
+          if (advanceUpdateError) throw advanceUpdateError
+
+          remainingAdvance = round2(remainingAdvance - use)
+        }
+        if (remainingAdvance > 0.009) {
+          throw new Error("Could not allocate the full advance. Please refresh and verify.")
+        }
+      }
+
+      if (amount > 0) {
+        const { error: paymentError } = await supabase.from("payments").insert({
+          shop_id: shopId,
+          customer_id: latest.customer_id,
+          bill_id: latest.id,
+          amount,
+          payment_mode: paymentMode,
+          payment_date: paymentDate,
+          is_advance: false,
+        })
+        if (paymentError) throw paymentError
       }
 
       const newPaid = round2(latestTotals.amountPaid + amount)
-      const newDue = Math.max(0, round2(latestTotals.grandTotal - latestTotals.advanceAdjusted - newPaid))
+      const newAdvanceAdjusted = round2(latestTotals.advanceAdjusted + advanceToUse)
 
-      const { error: paymentError } = await supabase.from("payments").insert({
-        shop_id: shopId,
-        customer_id: latest.customer_id,
-        bill_id: latest.id,
-        amount,
-        payment_mode: paymentMode,
-        payment_date: paymentDate,
-        is_advance: false,
-      })
-      if (paymentError) throw paymentError
+      // Apply this transaction to the bill's CURRENT outstanding balance.
+      // Do not rebuild the due from grand_total here: amount_due may already
+      // include earlier credits/adjustments that are not represented in the
+      // currently loaded payment rows.
+      const newDue = Math.max(
+        0,
+        round2(latestTotals.amountDue - advanceToUse - amount)
+      )
 
       const { error: updateError } = await supabase
         .from("bills")
         .update({
           amount_paid: newPaid,
+          advance_adjusted: newAdvanceAdjusted,
           amount_due: newDue,
           payment_status: newDue <= 0 ? "paid" : "partial",
         })
@@ -2049,7 +2663,7 @@ export default function BillDetail() {
         )
       }
 
-      toast.success("Payment recorded successfully")
+      toast.success(advanceToUse > 0 ? "Advance adjusted successfully" : "Payment recorded successfully")
       setPayOpen(false)
       await loadBill(true)
     } catch (error) {
@@ -2222,63 +2836,95 @@ export default function BillDetail() {
   function handleExportCSV() {
     if (!bill) return
 
+    // Protect spreadsheet users from CSV formula injection while keeping numbers numeric.
     const escapeCSV = (value) => {
-      const textValue = value === null || value === undefined ? "" : String(value)
+      if (value === null || value === undefined) return '""'
+      let textValue = String(value)
+      if (/^[\s\t\r]*[=+@]/.test(textValue) || /^[\s\t\r]*-/.test(textValue)) {
+        textValue = `'${textValue}`
+      }
       return `"${textValue.replace(/"/g, '""')}"`
     }
 
+    // Keep each advance allocation as its own history entry (e.g. two ₹5,000
+    // adjustments appear as two separate rows, not one combined ₹10,000 row).
+    const historyRows = [
+      ...payments.map((payment) => ({
+        date: payment.payment_date || payment.created_at || '',
+        type: payment.is_refund ? 'Refund' : 'Payment',
+        mode: payment.payment_mode || '',
+        amount: num(payment.amount) * (payment.is_refund ? -1 : 1),
+        reference: payment.reference_number || payment.transaction_id || '',
+        notes: payment.notes || '',
+        sort: new Date(payment.payment_date || payment.created_at || 0).getTime(),
+      })),
+      ...advanceAllocations.map((allocation) => ({
+        date: allocation.created_at || '',
+        type: 'Advance Adjusted',
+        mode: 'Customer Advance',
+        amount: num(allocation.amount),
+        reference: allocation.advance_id || allocation.id || '',
+        notes: allocation.notes || 'Adjusted from customer advance',
+        sort: new Date(allocation.created_at || 0).getTime(),
+      })),
+    ].sort((a, b) => a.sort - b.sort)
+
     const rows = [
-      ["BILL SUMMARY"],
-      ["Bill Number", bill.bill_number],
-      ["Bill Date", bill.bill_date ? formatDate(bill.bill_date) : ""],
-      ["Due Date", bill.due_date ? formatDate(bill.due_date) : ""],
-      ["Customer", customer?.name || bill.customers?.name || "Walk-in customer"],
-      ["Mobile", customer?.mobile || bill.customers?.mobile || ""],
-      ["Payment Status", status],
-      ["Subtotal", bill.subtotal],
-      ["Discount", bill.discount_amount],
-      ["Taxable Amount", bill.taxable_amount],
-      ["CGST", bill.cgst_amount],
-      ["SGST", bill.sgst_amount],
-      ["IGST", bill.igst_amount],
-      ["Total GST", bill.total_gst],
-      ["Grand Total", totals.grandTotal],
-      ["Amount Paid", totals.amountPaid],
-      ["Advance Adjusted", totals.advanceAdjusted],
-      ["Amount Due", totals.amountDue],
+      ['BILL SUMMARY'],
+      ['Bill Number', bill.bill_number],
+      ['Bill Date', bill.bill_date ? formatDate(bill.bill_date) : ''],
+      ['Due Date', bill.due_date ? formatDate(bill.due_date) : ''],
+      ['Customer', customer?.name || bill.customers?.name || 'Walk-in customer'],
+      ['Mobile', customer?.mobile || bill.customers?.mobile || ''],
+      ['Payment Status', status],
+      ['Subtotal', bill.subtotal],
+      ['Discount', bill.discount_amount],
+      ['Taxable Amount', bill.taxable_amount],
+      ['CGST', bill.cgst_amount],
+      ['SGST', bill.sgst_amount],
+      ['IGST', bill.igst_amount],
+      ['Total GST', bill.total_gst],
+      ['Grand Total', totals.grandTotal],
+      ['Amount Paid', totals.amountPaid],
+      ['Advance Adjusted', totals.advanceAdjusted],
+      ['Amount Due', totals.amountDue],
       [],
-      ["BILL ITEMS"],
-      ["Item", "Description", "Quantity", "Unit", "Rate", "Discount", "Taxable Amount", "GST %", "GST Amount", "Total"],
+      ['BILL ITEMS'],
+      ['Item', 'Description', 'Quantity', 'Unit', 'Rate', 'Discount', 'Taxable Amount', 'GST %', 'GST Amount', 'Total'],
       ...items.map((item) => [
         item.item_name, item.description, item.quantity, item.unit, item.rate,
         item.discount, item.taxable_amount, item.gst_percent, item.gst_amount, item.total_amount,
       ]),
       [],
-      ["PAYMENT HISTORY"],
-      ["Payment Date", "Payment Mode", "Amount", "Type", "Reference", "Notes"],
-      ...payments.map((payment) => [
-        payment.payment_date ? formatDate(payment.payment_date) : "",
-        payment.payment_mode,
-        payment.amount,
-        payment.is_refund ? "Refund" : "Payment",
-        payment.reference_number || payment.transaction_id || "",
-        payment.notes || "",
+      ['PAYMENT & ADVANCE HISTORY'],
+      ['Date', 'Transaction Type', 'Payment Mode / Source', 'Amount (₹)', 'Reference / Advance ID', 'Notes'],
+      ...historyRows.map((entry) => [
+        entry.date ? formatDate(entry.date) : '',
+        entry.type,
+        entry.mode,
+        entry.amount,
+        entry.reference,
+        entry.notes,
       ]),
+      [],
+      ['HISTORY TOTALS'],
+      ['Advance Adjusted (from allocation records)', advanceAllocations.reduce((sum, row) => sum + num(row.amount), 0)],
+      ['Payment / Refund Net', payments.reduce((sum, payment) => sum + num(payment.amount) * (payment.is_refund ? -1 : 1), 0)],
+      ['Pending Amount', totals.amountDue],
     ]
 
-    const csv = "\uFEFF" + rows.map((row) => row.map(escapeCSV).join(",")).join("\r\n")
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+    const csv = '\uFEFF' + rows.map((row) => row.map(escapeCSV).join(',')).join('\r\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
-    const anchor = document.createElement("a")
+    const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = `${String(bill.bill_number || "bill").replace(/[^a-z0-9_-]/gi, "_")}.csv`
+    anchor.download = `${String(bill.bill_number || 'bill').replace(/[^a-z0-9_-]/gi, '_')}.csv`
     document.body.appendChild(anchor)
     anchor.click()
     anchor.remove()
     URL.revokeObjectURL(url)
-    toast.success("Bill CSV exported")
+    toast.success('Bill CSV exported with payment and advance history')
   }
-
   /* ------------------------------ Render states ---------------------------- */
 
   if (!currentShop) {
@@ -2436,10 +3082,13 @@ export default function BillDetail() {
           <PaymentHistoryCard
             bill={bill}
             payments={payments}
+            advanceAllocations={advanceAllocations}
             totals={totals}
             isFullyPaid={isFullyPaid}
             dueInfo={dueInfo}
             onAddPayment={() => setPayOpen(true)}
+            shop={shop}
+            customer={customer}
           />
         </div>
 
@@ -2509,6 +3158,7 @@ export default function BillDetail() {
         customer={customer}
         totals={totals}
         today={today}
+        shopId={shopId}
         saving={saving}
         onSubmit={handleRecordPayment}
       />

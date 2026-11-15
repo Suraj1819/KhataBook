@@ -687,7 +687,7 @@ export default function ImportOfflineBill() {
                 <div className="flex flex-col justify-center">
                   <p className="break-all text-sm font-bold text-slate-800">{file.name}</p>
                   <p className="mt-1 text-xs text-slate-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                  <Button type="button" variant="outline" onClick={() => fileRef.current?.click()} className="mt-4 h-11 rounded-xl border-violet-200 bg-white">
+                  <Button type="button" variant="outline" onClick={() => fileRef.current?.click()} className="h-11 gap-2 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50 mt-4">
                     <UploadCloud className="mr-2 h-4 w-4" />
                     Replace file
                   </Button>
@@ -699,7 +699,7 @@ export default function ImportOfflineBill() {
                       if (preview) URL.revokeObjectURL(preview)
                       setPreview("")
                     }}
-                    className="mt-2 h-11 rounded-xl text-rose-600 hover:bg-rose-50"
+                    className="h-11 gap-2 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50 mt-8"
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
                     Remove file
@@ -725,14 +725,14 @@ export default function ImportOfflineBill() {
                 OCR suggestions are not saved automatically. You can correct customer, item and payment details before importing.
               </p>
               <div className="flex flex-col-reverse gap-2 sm:flex-row">
-                <Button type="button" variant="outline" onClick={startManualEntry} className="h-11 rounded-xl border-violet-200 bg-white px-4">
+                <Button type="button" variant="outline" onClick={startManualEntry} className="h-11 gap-2 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50">
                   Enter manually
                 </Button>
                 <Button
                   type="button"
                   disabled={!file || scanning}
                   onClick={scanFile}
-                  className="h-11 rounded-xl bg-emerald-700 px-5 font-semibold text-white shadow-sm hover:bg-emerald-800"
+                  className="h-11 gap-2 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
                 >
                   {scanning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ScanLine className="mr-2 h-4 w-4" />}
                   {scanning ? "Scanning bill…" : "Scan & extract details"}

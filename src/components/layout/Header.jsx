@@ -31,6 +31,7 @@ const OVERDUE_REFRESH_MS = 5 * 60 * 1000
 
 const PAGE_TITLES = {
   "/": "Dashboard",
+  "/command-center": "Command Center",
   "/bills": "All Bills",
   "/bills/new": "Create Bill",
   "/dues": "Dues",

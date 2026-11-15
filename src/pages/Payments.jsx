@@ -46,6 +46,7 @@ import {
   Search,
   Store,
   TrendingUp,
+  Trash2,
   Users,
   Wallet,
   X,
@@ -250,7 +251,7 @@ function PaymentsSkeleton() {
       aria-label="Loading payments"
     >
       <Skeleton className="h-16 w-72" />
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} className="h-[104px] rounded-[20px]" />
         ))}
@@ -284,11 +285,16 @@ function SummaryCard({ label, value, detail, icon: Icon, tone = "green" }) {
         </div>
 
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-medium text-slate-600">{label}</p>
-          <h3 className="mt-1.5 break-words text-[23px] font-bold leading-tight tracking-tight text-[#151934] tabular-nums">
+          <p className="line-clamp-2 min-h-[2.25rem] text-[12px] font-medium leading-[1.15rem] text-slate-600 sm:text-[13px]">
+            {label}
+          </p>
+          <h3
+            className="mt-1.5 w-full whitespace-nowrap text-[clamp(1rem,1.55vw,1.4rem)] font-bold leading-tight tracking-[-0.035em] text-[#151934] tabular-nums"
+            title={String(value)}
+          >
             {value}
           </h3>
-          <p className={`mt-1.5 text-xs font-semibold ${style.accent}`}>{detail}</p>
+          <p className={`mt-1.5 text-xs font-semibold leading-snug ${style.accent}`}>{detail}</p>
         </div>
       </CardContent>
     </Card>
@@ -427,6 +433,8 @@ export default function Payments() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [form, setForm] = useState(initialForm)
   const [saving, setSaving] = useState(false)
+  const [deletingPaymentId, setDeletingPaymentId] = useState(null)
+  const [paymentToDelete, setPaymentToDelete] = useState(null)
   const [customerDue, setCustomerDue] = useState(null)
 
   const hasLoaded = useRef(false)
@@ -965,6 +973,51 @@ export default function Payments() {
   }
 
   /* --------------------------------------------------
+     DELETE A SINGLE PAYMENT
+  -------------------------------------------------- */
+
+  async function handleDeletePayment() {
+    if (!paymentToDelete?.id || !shopId || deletingPaymentId) return
+
+    const payment = paymentToDelete
+    setDeletingPaymentId(payment.id)
+
+    try {
+      // Remove any advance record linked to this payment first.
+      if (payment.is_advance) {
+        const { error: advanceError } = await supabase
+          .from("customer_advances")
+          .delete()
+          .eq("payment_id", payment.id)
+          .eq("shop_id", shopId)
+
+        if (advanceError) throw advanceError
+      }
+
+      const { error } = await supabase
+        .from("payments")
+        .delete()
+        .eq("id", payment.id)
+        .eq("shop_id", shopId)
+
+      if (error) throw error
+
+      setPayments((current) => current.filter((item) => item.id !== payment.id))
+      setPaymentToDelete(null)
+      toast.success("Payment deleted", {
+        description: `${formatCurrency(payment.amount)} payment record has been deleted.`,
+      })
+    } catch (error) {
+      console.error("Delete payment error:", error)
+      toast.error("Could not delete payment", {
+        description: error?.message || "Please try again.",
+      })
+    } finally {
+      setDeletingPaymentId(null)
+    }
+  }
+
+  /* --------------------------------------------------
      EMPTY / LOADING STATES
   -------------------------------------------------- */
 
@@ -1467,14 +1520,24 @@ export default function Payments() {
                             className="border-b border-[#eeecf5] transition-colors last:border-0 hover:bg-[#f9f8ff]"
                           >
                             <td className="px-3 py-3">
-                              <div className="flex items-center gap-2.5">
+                              <Link
+                                to={payment.customer_id ? `/customers/${payment.customer_id}` : "#"}
+                                onClick={(event) => {
+                                  if (!payment.customer_id) event.preventDefault()
+                                }}
+                                aria-label={`Open ${name}'s customer profile`}
+                                title="Open customer profile"
+                                className={`group flex min-w-0 items-center gap-2.5 rounded-lg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-emerald-600 ${
+                                  payment.customer_id ? "hover:text-emerald-700" : "cursor-default"
+                                }`}
+                              >
                                 <CustomerAvatar
                                   name={name}
                                   photoUrl={payment.customers?.photo_url}
                                   className="h-9 w-9"
                                 />
                                 <div className="min-w-0">
-                                  <p className="max-w-[170px] truncate text-[12px] font-bold text-slate-800">
+                                  <p className="max-w-[170px] truncate text-[12px] font-bold text-slate-800 transition-colors group-hover:text-emerald-700">
                                     {name}
                                   </p>
                                   {payment.customers?.mobile && (
@@ -1484,7 +1547,7 @@ export default function Payments() {
                                     </p>
                                   )}
                                 </div>
-                              </div>
+                              </Link>
                             </td>
 
                             <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-600">
@@ -1539,6 +1602,17 @@ export default function Payments() {
                                   </Link>
                                 )}
                                 <ReceiptButton payment={payment} shopName={currentShop.name} />
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="icon"
+                                  aria-label={`Delete payment of ${formatCurrency(payment.amount)} for ${name}`}
+                                  title="Delete payment"
+                                  onClick={() => setPaymentToDelete(payment)}
+                                  className="h-9 w-9 rounded-xl border-rose-200 bg-white text-rose-600 shadow-sm hover:bg-rose-50 hover:text-rose-700"
+                                >
+                                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                                </Button>
                                 {!payment.bill_id && !getReceiptLink(payment, currentShop.name) && (
                                   <span className="text-xs text-slate-300" aria-hidden="true">
                                     —
@@ -1567,20 +1641,32 @@ export default function Payments() {
                     return (
                       <div key={payment.id} className="space-y-3 p-4">
                         <div className="flex items-start justify-between gap-3">
-                          <div className="flex min-w-0 items-center gap-3">
+                          <Link
+                            to={payment.customer_id ? `/customers/${payment.customer_id}` : "#"}
+                            onClick={(event) => {
+                              if (!payment.customer_id) event.preventDefault()
+                            }}
+                            aria-label={`Open ${name}'s customer profile`}
+                            title="Open customer profile"
+                            className={`group flex min-w-0 items-center gap-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${
+                              payment.customer_id ? "hover:text-emerald-700" : "cursor-default"
+                            }`}
+                          >
                             <CustomerAvatar
                               name={name}
                               photoUrl={payment.customers?.photo_url}
                               className="h-10 w-10"
                             />
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-bold text-slate-800">{name}</p>
+                            <div className="min-w-0 text-left">
+                              <p className="truncate text-sm font-bold text-slate-800 transition-colors group-hover:text-emerald-700">
+                                {name}
+                              </p>
                               <p className="mt-0.5 truncate text-xs text-slate-500">
                                 {payment.payment_date ? formatDate(payment.payment_date) : "—"}
                                 {payment.payment_mode ? ` · ${payment.payment_mode}` : ""}
                               </p>
                             </div>
-                          </div>
+                          </Link>
                           <AmountText payment={payment} className="shrink-0 text-sm" />
                         </div>
 
@@ -1598,9 +1684,10 @@ export default function Payments() {
                           )}
                         </div>
 
-                        {(payment.bill_id || hasReceipt) && (
-                          <div className="flex gap-2">
-                            {payment.bill_id && (
+                        <div className="flex flex-wrap gap-2">
+                          {(payment.bill_id || hasReceipt) && (
+                            <>
+                              {payment.bill_id && (
                               <Button
                                 asChild
                                 variant="outline"
@@ -1617,9 +1704,19 @@ export default function Payments() {
                                 </Link>
                               </Button>
                             )}
-                            <ReceiptButton payment={payment} shopName={currentShop.name} full />
-                          </div>
-                        )}
+                              <ReceiptButton payment={payment} shopName={currentShop.name} full />
+                            </>
+                          )}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setPaymentToDelete(payment)}
+                            className="h-10 gap-2 rounded-xl border-rose-200 bg-white px-3 text-sm font-medium text-rose-600 shadow-sm hover:bg-rose-50 hover:text-rose-700"
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                            Delete
+                          </Button>
+                        </div>
                       </div>
                     )
                   })}
@@ -1902,6 +1999,76 @@ export default function Payments() {
             : "Not updated yet"}
         </span>
       </footer>
+
+      {/* DELETE PAYMENT CONFIRMATION */}
+
+      <Dialog
+        open={!!paymentToDelete}
+        onOpenChange={(open) => {
+          if (!open && !deletingPaymentId) setPaymentToDelete(null)
+        }}
+      >
+        <DialogContent className="rounded-[20px] border-rose-100 bg-white p-0 sm:max-w-[420px]">
+          <DialogHeader className="space-y-2 border-b border-rose-100 px-6 pb-5 pt-6">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-50 text-rose-600">
+              <Trash2 className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <DialogTitle className="text-lg font-bold text-[#171a36]">
+              Delete this payment?
+            </DialogTitle>
+            <DialogDescription className="text-sm leading-6 text-slate-500">
+              This will permanently delete only this payment record. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          {paymentToDelete && (
+            <div className="mx-6 my-5 rounded-xl border border-rose-100 bg-rose-50/60 px-4 py-3">
+              <p className="text-sm font-semibold text-slate-800">
+                {paymentToDelete.customers?.name || "Unknown customer"}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {paymentToDelete.payment_date ? formatDate(paymentToDelete.payment_date) : "—"}
+                {" · "}
+                {paymentToDelete.payment_mode || "—"}
+              </p>
+              <p className="mt-2 text-lg font-bold tabular-nums text-rose-700">
+                {paymentToDelete.is_refund ? "−" : "+"}
+                {formatCurrency(paymentToDelete.amount)}
+              </p>
+            </div>
+          )}
+
+          <DialogFooter className="flex-col-reverse gap-2 border-t border-[#eeecf5] px-6 py-4 sm:flex-row">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPaymentToDelete(null)}
+              disabled={!!deletingPaymentId}
+              className="h-11 rounded-xl border-violet-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-violet-50"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleDeletePayment}
+              disabled={!paymentToDelete || !!deletingPaymentId}
+              className="h-11 gap-2 rounded-xl bg-rose-600 px-5 text-sm font-semibold text-white hover:bg-rose-700"
+            >
+              {deletingPaymentId ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4" />
+                  Delete payment
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* RECORD PAYMENT DIALOG */}
 

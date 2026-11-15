@@ -6,7 +6,7 @@ import {
   AlertCircle, CreditCard, Settings, Store, UserCircle,
   X, ChevronDown, TrendingUp, LogOut, Check, Plus,
   ChevronsLeft, ChevronsRight, Sun, Moon, Monitor, Loader2,
-  MapPin, ScanLine,
+  MapPin, ScanLine, Command,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useShop } from "@/contexts/ShopContext"
@@ -17,6 +17,10 @@ import { useAuth } from "@/contexts/AuthContext"
 ================================================== */
 
 const STORAGE_KEY = "sidebar-collapsed"
+const WIDTH_STORAGE_KEY = "sidebar-width"
+const MIN_SIDEBAR_WIDTH = 220
+const MAX_SIDEBAR_WIDTH = 380
+const DEFAULT_SIDEBAR_WIDTH = 260
 const THEME_KEY = "theme"
 
 const THEME_OPTIONS = [
@@ -30,6 +34,7 @@ const navGroups = [
     label: "Overview",
     items: [
       { to: "/", icon: LayoutDashboard, label: "Dashboard" },
+      { to: "/command-center", icon: Command, label: "Command Center" },
     ],
   },
   {
@@ -149,7 +154,7 @@ function BrandLogo({ compact }) {
         </span>
       ) : (
         <img
-          src="../../../public//Logo//hh.png"
+          src="/Logo/hh.png"
           alt="KhaataPro logo"
           className="h-full w-full rounded-full object-cover"
           onError={() => setFailed(true)}
@@ -207,7 +212,67 @@ export function Sidebar({ open, onClose }) {
   const profileMenuButtonRef = useRef(null)
   const profileDropdownRef = useRef(null)
 
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem(WIDTH_STORAGE_KEY))
+      return Number.isFinite(saved) && saved >= MIN_SIDEBAR_WIDTH && saved <= MAX_SIDEBAR_WIDTH
+        ? saved
+        : DEFAULT_SIDEBAR_WIDTH
+    } catch {
+      return DEFAULT_SIDEBAR_WIDTH
+    }
+  })
+  const [isResizing, setIsResizing] = useState(false)
+
   const compact = collapsed && !open
+
+  const handleResizeStart = (event) => {
+    if (window.innerWidth < 1024) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    setIsResizing(true)
+  }
+
+  const handleResizeMove = (event) => {
+    if (!isResizing) return
+
+    const sidebarLeft = event.currentTarget.parentElement?.getBoundingClientRect().left || 0
+    const requestedWidth = event.clientX - sidebarLeft
+
+    // Dragging close to the left edge fully collapses the sidebar.
+    if (!collapsed && requestedWidth <= 145) {
+      setCollapsed(true)
+      try { localStorage.setItem(STORAGE_KEY, "1") } catch {}
+      return
+    }
+
+    // Dragging the edge outwards expands a collapsed sidebar again.
+    if (collapsed && requestedWidth > 145) {
+      setCollapsed(false)
+      try { localStorage.setItem(STORAGE_KEY, "0") } catch {}
+    }
+
+    const nextWidth = Math.min(
+      MAX_SIDEBAR_WIDTH,
+      Math.max(MIN_SIDEBAR_WIDTH, requestedWidth)
+    )
+    setSidebarWidth(nextWidth)
+    try {
+      localStorage.setItem(WIDTH_STORAGE_KEY, String(nextWidth))
+    } catch {}
+  }
+
+  const handleResizeEnd = () => setIsResizing(false)
+
+  const handleResizeReset = () => {
+    setCollapsed(false)
+    setSidebarWidth(DEFAULT_SIDEBAR_WIDTH)
+    setIsResizing(false)
+    try {
+      localStorage.setItem(STORAGE_KEY, "0")
+      localStorage.setItem(WIDTH_STORAGE_KEY, String(DEFAULT_SIDEBAR_WIDTH))
+    } catch {}
+  }
 
   const displayName =
     profile?.full_name ||
@@ -546,6 +611,47 @@ export function Sidebar({ open, onClose }) {
 
   return (
     <>
+      <style>{`
+        /* Keep the sidebar scrollbar invisible until the sidebar is engaged. */
+        .khaatapro-sidebar-nav {
+          scrollbar-width: none;
+          scrollbar-color: transparent transparent;
+        }
+        .khaatapro-sidebar-nav::-webkit-scrollbar {
+          width: 6px;
+          height: 6px;
+        }
+        .khaatapro-sidebar-nav::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .khaatapro-sidebar-nav::-webkit-scrollbar-thumb {
+          background: transparent;
+          border-radius: 999px;
+          transition: background-color 180ms ease;
+        }
+        .khaatapro-sidebar:hover .khaatapro-sidebar-nav,
+        .khaatapro-sidebar:focus-within .khaatapro-sidebar-nav {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(148, 163, 184, 0.72) transparent;
+        }
+        .khaatapro-sidebar:hover .khaatapro-sidebar-nav::-webkit-scrollbar-thumb,
+        .khaatapro-sidebar:focus-within .khaatapro-sidebar-nav::-webkit-scrollbar-thumb {
+          background: rgba(148, 163, 184, 0.72);
+        }
+        .dark .khaatapro-sidebar:hover .khaatapro-sidebar-nav,
+        .dark .khaatapro-sidebar:focus-within .khaatapro-sidebar-nav {
+          scrollbar-color: rgba(100, 116, 139, 0.85) transparent;
+        }
+        .dark .khaatapro-sidebar:hover .khaatapro-sidebar-nav::-webkit-scrollbar-thumb,
+        .dark .khaatapro-sidebar:focus-within .khaatapro-sidebar-nav::-webkit-scrollbar-thumb {
+          background: rgba(100, 116, 139, 0.85);
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .khaatapro-sidebar-nav::-webkit-scrollbar-thumb {
+            transition: none;
+          }
+        }
+      `}</style>
       {/* Mobile overlay */}
       {open && (
         <div
@@ -558,12 +664,13 @@ export function Sidebar({ open, onClose }) {
       <aside
         aria-label="Main navigation"
         className={cn(
-          "fixed left-0 top-0 z-50 flex h-dvh max-h-dvh max-w-[88vw] flex-col border-r border-slate-100 bg-white transition-[width,transform] duration-300 ease-out dark:border-slate-800 dark:bg-slate-900 lg:static lg:h-full lg:max-h-none lg:z-auto lg:max-w-none",
-          compact ? "w-[80px]" : "w-[260px]",
+          "khaatapro-sidebar relative fixed left-0 top-0 z-50 flex h-dvh max-h-dvh max-w-[88vw] flex-col border-r border-slate-100 bg-white transition-[transform] duration-300 ease-out dark:border-slate-800 dark:bg-slate-900 lg:static lg:h-full lg:max-h-none lg:z-auto lg:max-w-none",
+          isResizing && "select-none transition-none",
           open
             ? "translate-x-0 shadow-2xl dark:shadow-black/50"
             : "-translate-x-full lg:translate-x-0 lg:shadow-none"
         )}
+        style={{ width: compact ? 80 : sidebarWidth }}
       >
 
         {/* BRAND HEADER */}
@@ -595,11 +702,11 @@ export function Sidebar({ open, onClose }) {
 
                 {!compact && (
                   <div className="flex flex-col">
-                    <span className="text-[18px] font-extrabold leading-none tracking-tight text-[#0f8a4b] dark:text-emerald-400">
+                    <span className="text-[16px] font-extrabold leading-none tracking-tight text-[#0f8a4b] dark:text-emerald-400">
                       KHAATAPRO
                     </span>
 
-                    <span className="mt-1 text-[11px] font-medium leading-none text-slate-500 dark:text-slate-400">
+                    <span className="mt-1 text-[10px] font-medium leading-none text-slate-500 dark:text-slate-400">
                       Digital Khata Book
                     </span>
                   </div>
@@ -664,7 +771,7 @@ export function Sidebar({ open, onClose }) {
             title={compact ? currentShop?.name || "Select a shop" : undefined}
             className={cn(
               "group flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white text-left shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f8a4b] dark:border-slate-700 dark:bg-slate-800/60 dark:hover:border-slate-600 dark:hover:bg-slate-800 dark:focus-visible:ring-emerald-400",
-              compact ? "justify-center p-2.5" : "px-3 py-2.5"
+              compact ? "justify-center p-2.5" : "px-3 py-2"
             )}
           >
             <div className="flex min-w-0 items-center gap-2.5">
@@ -674,11 +781,11 @@ export function Sidebar({ open, onClose }) {
 
               {!compact && (
                 <div className="min-w-0">
-                  <p className="text-[10px] font-semibold leading-none text-slate-400 dark:text-slate-500">
+                  <p className="text-[11px] font-semibold leading-none text-slate-400 dark:text-slate-500">
                     Shop
                   </p>
 
-                  <p className="mt-1 truncate text-[13px] font-semibold leading-none text-slate-800 dark:text-slate-100">
+                  <p className="mt-1 truncate text-[13.5px] font-semibold leading-tight text-slate-800 dark:text-slate-100">
                     {currentShop?.name || "Select a shop"}
                   </p>
                 </div>
@@ -717,11 +824,11 @@ export function Sidebar({ open, onClose }) {
                 Workspace switcher
               </p>
 
-              <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+              <p className="mt-1 text-[13px] font-semibold text-slate-900 dark:text-slate-100">
                 Select a shop
               </p>
 
-              <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+              <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
                 Switch between your business workspaces.
               </p>
             </div>
@@ -758,7 +865,7 @@ export function Sidebar({ open, onClose }) {
                       </span>
 
                       <span className="min-w-0 flex-1">
-                        <span className="block break-words text-[13px] font-semibold leading-5">
+                        <span className="block break-words text-[12px] font-semibold leading-5">
                           {shop.name || "Untitled shop"}
                         </span>
 
@@ -783,7 +890,7 @@ export function Sidebar({ open, onClose }) {
                     No shops found
                   </p>
 
-                  <p className="mt-1 text-[11px] text-slate-400">
+                  <p className="mt-1 text-[10px] text-slate-400">
                     Create your first shop to get started.
                   </p>
                 </div>
@@ -814,11 +921,11 @@ export function Sidebar({ open, onClose }) {
         <nav
           aria-label="Sidebar"
           className={cn(
-            "min-h-0 flex-1 overflow-y-auto overscroll-contain py-2 [scrollbar-width:thin] dark:[scrollbar-color:#334155_transparent]",
+            "khaatapro-sidebar-nav min-h-0 flex-1 overflow-y-auto overscroll-contain py-2",
             compact ? "px-2" : "px-3"
           )}
         >
-          <div className="space-y-5">
+          <div className="space-y-4">
             {navGroups.map((group, groupIndex) => (
               <div key={group.label}>
                 {compact ? (
@@ -829,7 +936,7 @@ export function Sidebar({ open, onClose }) {
                     />
                   )
                 ) : (
-                  <p className="mb-1.5 px-3 text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-400 dark:text-slate-500">
+                  <p className="mb-1.5 px-3 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400 dark:text-slate-500">
                     {group.label}
                   </p>
                 )}
@@ -847,8 +954,8 @@ export function Sidebar({ open, onClose }) {
                         aria-label={compact ? label : undefined}
                         aria-current={active ? "page" : undefined}
                         className={cn(
-                          "group relative flex items-center rounded-xl text-[13px] transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f8a4b] dark:focus-visible:ring-emerald-400",
-                          compact ? "h-10 justify-center" : "gap-3 px-3 py-2.5",
+                          "group relative flex items-center rounded-xl text-[14px] transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f8a4b] dark:focus-visible:ring-emerald-400",
+                          compact ? "h-11 justify-center" : "gap-3 px-3 py-2.5",
                           active
                             ? "bg-[#e8f5ed] font-semibold text-[#0f8a4b] dark:bg-emerald-500/15 dark:text-emerald-400"
                             : "font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
@@ -864,7 +971,7 @@ export function Sidebar({ open, onClose }) {
                         <Icon
                           className={cn(
                             "shrink-0 transition-colors",
-                            compact ? "h-5 w-5" : "h-[18px] w-[18px]",
+                            compact ? "h-5 w-5" : "h-5 w-5",
                             active
                               ? "text-[#0f8a4b] dark:text-emerald-400"
                               : "text-slate-500 group-hover:text-slate-700 dark:text-slate-500 dark:group-hover:text-slate-300"
@@ -885,88 +992,6 @@ export function Sidebar({ open, onClose }) {
           </div>
         </nav>
 
-        {/* PROMO CARD */}
-        {!compact && (
-          <div className="px-4 pb-4 pt-2">
-            <div className="relative overflow-hidden rounded-2xl border border-violet-100/60 bg-gradient-to-br from-[#f8f4ff] to-[#f0e8ff] p-4 shadow-sm dark:border-violet-500/20 dark:from-violet-500/10 dark:to-violet-500/5 dark:shadow-none">
-              <div className="relative z-10">
-                <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-violet-100 dark:bg-slate-800 dark:ring-violet-500/20">
-                  <TrendingUp
-                    className="h-4 w-4 text-[#0f8a4b] dark:text-emerald-400"
-                    strokeWidth={2.5}
-                    aria-hidden="true"
-                  />
-                </div>
-
-                <h3 className="text-[14px] font-bold leading-tight text-slate-900 dark:text-slate-100">
-                  Grow Your Business
-                </h3>
-
-                <p className="mt-1.5 text-[11.5px] leading-relaxed text-slate-600 dark:text-slate-400">
-                  Track sales, collect payments and manage dues easily.
-                </p>
-              </div>
-
-              <div
-                className="pointer-events-none absolute -bottom-4 -right-2 z-0 opacity-80 dark:opacity-50"
-                aria-hidden="true"
-              >
-                <svg
-                  width="80"
-                  height="90"
-                  viewBox="0 0 80 90"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path
-                    d="M40 90 C 40 60, 70 40, 65 10"
-                    stroke="#7c3aed"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeOpacity="0.3"
-                  />
-                  <ellipse
-                    cx="58"
-                    cy="25"
-                    rx="8"
-                    ry="12"
-                    fill="#8b5cf6"
-                    fillOpacity="0.2"
-                    transform="rotate(30 58 25)"
-                  />
-                  <ellipse
-                    cx="50"
-                    cy="45"
-                    rx="6"
-                    ry="10"
-                    fill="#8b5cf6"
-                    fillOpacity="0.15"
-                    transform="rotate(-15 50 45)"
-                  />
-                  <ellipse
-                    cx="62"
-                    cy="55"
-                    rx="7"
-                    ry="11"
-                    fill="#8b5cf6"
-                    fillOpacity="0.2"
-                    transform="rotate(45 62 55)"
-                  />
-                  <ellipse
-                    cx="45"
-                    cy="70"
-                    rx="5"
-                    ry="9"
-                    fill="#8b5cf6"
-                    fillOpacity="0.1"
-                    transform="rotate(-25 45 70)"
-                  />
-                </svg>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* USER FOOTER */}
         <div
           className="relative z-[70] shrink-0 border-t border-slate-100 p-3 dark:border-slate-800"
@@ -985,7 +1010,7 @@ export function Sidebar({ open, onClose }) {
               compact ? "justify-center p-1.5" : "gap-3 px-2 py-2"
             )}
           >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0f8a4b] text-[13px] font-bold text-white shadow-sm ring-2 ring-white dark:bg-emerald-600 dark:ring-slate-900">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0f8a4b] text-[12px] font-bold text-white shadow-sm ring-2 ring-white dark:bg-emerald-600 dark:ring-slate-900">
               {profile?.avatar_url ? (
                 <img
                   src={profile.avatar_url}
@@ -1004,7 +1029,7 @@ export function Sidebar({ open, onClose }) {
                     {displayName}
                   </p>
 
-                  <p className="truncate text-[11.5px] font-medium capitalize text-slate-500 dark:text-slate-400">
+                  <p className="truncate text-[11px] font-medium capitalize text-slate-500 dark:text-slate-400">
                     {profile?.role || "Owner"}
                   </p>
                 </div>
@@ -1039,11 +1064,11 @@ export function Sidebar({ open, onClose }) {
             >
               {/* Who is signed in */}
               <div className="border-b border-slate-100 px-3.5 py-3 dark:border-slate-700">
-                <p className="truncate text-[13px] font-bold text-slate-900 dark:text-slate-100">
+                <p className="truncate text-[12px] font-bold text-slate-900 dark:text-slate-100">
                   {displayName}
                 </p>
 
-                <p className="truncate text-[11.5px] text-slate-500 dark:text-slate-400">
+                <p className="truncate text-[10px] text-slate-500 dark:text-slate-400">
                   {user?.email}
                 </p>
               </div>
@@ -1146,6 +1171,24 @@ export function Sidebar({ open, onClose }) {
             document.body
           )}
         </div>
+
+        {/* DESKTOP RESIZE / COLLAPSE HANDLE */}
+        <button
+          type="button"
+          aria-label="Drag to resize or collapse sidebar; double-click to restore default width"
+          title="Drag left to collapse · Drag right to expand · Double-click to reset"
+          onPointerDown={handleResizeStart}
+          onPointerMove={handleResizeMove}
+          onPointerUp={handleResizeEnd}
+          onPointerCancel={handleResizeEnd}
+          onDoubleClick={handleResizeReset}
+          className={cn(
+            "group absolute -right-[5px] top-0 z-[80] hidden h-full w-[10px] cursor-col-resize touch-none items-center justify-center outline-none lg:flex",
+            isResizing && "bg-emerald-500/10"
+          )}
+        >
+          <span className="h-12 w-[3px] rounded-full bg-slate-300 opacity-0 transition-all group-hover:bg-emerald-500 group-hover:opacity-100 group-focus-visible:bg-emerald-500 group-focus-visible:opacity-100 dark:bg-slate-600" />
+        </button>
       </aside>
     </>
   )
