@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Link } from "react-router-dom"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { Link, useNavigate } from "react-router-dom"
 import { useShop } from "@/contexts/ShopContext"
 import { supabase } from "@/lib/supabase"
-import { formatCurrency, formatDate } from "@/lib/utils"
+import { cn, formatCurrency, formatDate } from "@/lib/utils"
 import { exportDashboardPdf, exportRecentBillsCsv, exportRecentBillsPdf } from "@/lib/dashboardPdf"
 
 import { Card, CardContent } from "@/components/ui/card"
@@ -18,6 +18,7 @@ import {
   Bell,
   BellRing,
   Box,
+  CalendarClock,
   CalendarDays,
   CheckCircle2,
   ChevronDown,
@@ -32,6 +33,7 @@ import {
   Hourglass,
   IndianRupee,
   Layers,
+  Loader2,
   Minus,
   PieChart,
   Plus,
@@ -53,6 +55,7 @@ import { toast } from "sonner"
 
 const RECENT_PAGE_SIZE = 5
 const FETCH_BATCH = 1000 // Supabase returns max 1000 rows per request
+const AUTO_REFRESH_MS = 120000 // silent refresh every 2 minutes while the tab is open
 
 // Column in the "payments" table that stores the payment date.
 // Change this if yours is named differently (e.g. "created_at", "paid_on").
@@ -123,6 +126,18 @@ const AVATAR_COLORS = [
 const cardClass =
   "overflow-hidden rounded-[20px] border border-white/80 bg-white/85 shadow-[0_5px_18px_rgba(80,65,130,0.07)] backdrop-blur-sm"
 
+// ONE button style for the whole page. Every button gets a pointer cursor on hover.
+const BTN =
+  "inline-flex h-11 min-w-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm transition-all hover:-translate-y-px hover:border-violet-300 hover:bg-violet-50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
+const BTN_SM = "h-10 px-3 text-xs font-semibold"
+const ICON_BTN =
+  "inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border border-violet-200 bg-white p-0 text-slate-700 shadow-sm transition-all hover:border-violet-300 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-40"
+const FOCUS_RING = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+
+function DashButton({ className, small = false, ...props }) {
+  return <Button variant="outline" className={cn(BTN, small && BTN_SM, className)} {...props} />
+}
+
 const num = (value) => Number(value) || 0
 
 function getLocalDateString() {
@@ -169,6 +184,46 @@ function getInitials(name) {
       .join("")
       .toUpperCase() || "?"
   )
+}
+
+// "just now", "5 min ago", "2 h ago"
+function timeAgo(date, now) {
+  if (!date) return ""
+  const seconds = Math.max(0, Math.round((now - date.getTime()) / 1000))
+  if (seconds < 45) return "just now"
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.round(minutes / 60)
+  return `${hours} h ago`
+}
+
+// Ticks so "updated 2 min ago" stays correct without a refetch
+function useNow(intervalMs = 30000) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs)
+    return () => clearInterval(id)
+  }, [intervalMs])
+  return now
+}
+
+/**
+ * Brings the page back to the top. Works whether the window scrolls or the
+ * app layout has its own scrolling container around this page.
+ */
+function scrollToTop(startEl) {
+  window.scrollTo(0, 0)
+  document.documentElement.scrollTop = 0
+  document.body.scrollTop = 0
+
+  let node = startEl?.parentElement
+  while (node && node !== document.body) {
+    const { overflowY } = window.getComputedStyle(node)
+    if (/(auto|scroll|overlay)/.test(overflowY) && node.scrollHeight > node.clientHeight) {
+      node.scrollTop = 0
+    }
+    node = node.parentElement
+  }
 }
 
 function CustomerAvatar({ name, photoUrl, className = "h-10 w-10" }) {
@@ -486,9 +541,10 @@ function Skeleton({ className = "" }) {
   return <div className={`animate-pulse rounded-lg bg-slate-200/70 ${className}`} />
 }
 
-function DashboardSkeleton() {
+function DashboardSkeleton({ innerRef }) {
   return (
     <div
+      ref={innerRef}
       className="min-h-full w-full space-y-4 rounded-2xl bg-[#f7f5ff] px-3 py-5 sm:px-5 lg:px-6"
       aria-busy="true"
       aria-label="Loading dashboard"
@@ -526,7 +582,7 @@ function SummaryCard({ label, value, detail, icon: Icon, tone = "green", footer 
   const style = SUMMARY_TONES[tone]
 
   return (
-    <Card className="overflow-hidden rounded-[20px] border border-white/80 bg-white/80 shadow-[0_4px_15px_rgba(80,65,130,0.07)] backdrop-blur-sm">
+    <Card className="overflow-hidden rounded-[20px] border border-white/80 bg-white/80 shadow-[0_4px_15px_rgba(80,65,130,0.07)] backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_10px_26px_rgba(80,65,130,0.12)]">
       <CardContent className="flex min-w-0 items-center gap-4 p-4 sm:p-5">
         <div
           className={`flex h-[58px] w-[58px] shrink-0 items-center justify-center rounded-full ${style.icon}`}
@@ -589,7 +645,7 @@ function CompactStat({ label, value, icon: Icon, tone = "purple", detail }) {
   }
 
   return (
-    <Card className="rounded-[18px] border border-white/80 bg-white/75 shadow-[0_3px_12px_rgba(80,65,130,0.06)]">
+    <Card className="rounded-[18px] border border-white/80 bg-white/75 shadow-[0_3px_12px_rgba(80,65,130,0.06)] transition-all hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_8px_20px_rgba(80,65,130,0.1)]">
       <CardContent className="flex min-w-0 items-center gap-3 p-3.5 sm:p-4">
         <div
           className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${styles[tone]}`}
@@ -639,7 +695,7 @@ function QuickAction({ title, description, icon: Icon, to, tone }) {
   return (
     <Link
       to={to}
-      className={`flex min-w-0 items-center gap-3 rounded-xl p-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${QUICK_ACTION_TONES[tone]}`}
+      className={`flex min-w-0 cursor-pointer items-center gap-3 rounded-xl p-3 transition-all hover:-translate-y-px hover:shadow-sm ${FOCUS_RING} ${QUICK_ACTION_TONES[tone]}`}
     >
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/80">
         <Icon className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
@@ -676,7 +732,7 @@ function BusinessSummaryRow({ label, value, icon: Icon, tone = "green" }) {
 
 function MetricTile({ icon: Icon, iconClass, label, value, valueClass = "text-slate-900", note }) {
   return (
-    <div className="flex min-h-[132px] flex-col justify-between rounded-2xl border border-[#ece9f5] bg-white p-4">
+    <div className="flex min-h-[132px] flex-col justify-between rounded-2xl border border-[#ece9f5] bg-white p-4 transition-all hover:-translate-y-0.5 hover:border-violet-200 hover:shadow-[0_8px_20px_rgba(80,65,130,0.08)]">
       <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${iconClass}`}>
         <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
       </div>
@@ -704,10 +760,12 @@ function EmptyNote({ icon: Icon, title, description }) {
 }
 
 /* ==================================================
-   SALES TREND CHART (inline SVG, no extra library)
+   SALES TREND CHART (inline SVG, hover tooltip)
 ================================================== */
 
 function TrendChart({ data }) {
+  const [hover, setHover] = useState(null)
+
   const W = 720
   const H = 250
   const padLeft = 52
@@ -726,86 +784,124 @@ function TrendChart({ data }) {
   const labelStep = data.length > 14 ? Math.ceil(data.length / 8) : 1
   const y = (value) => padTop + plotH - (value / max) * plotH
 
+  // Tooltip position follows the hovered day
+  const hovered = hover !== null ? data[hover] : null
+  const tipLeft = hovered
+    ? Math.min(86, Math.max(14, ((padLeft + groupW * (hover + 0.5)) / W) * 100))
+    : 0
+  const tipTop = hovered
+    ? Math.min(88, Math.max(34, (y(Math.max(hovered.sales, hovered.received)) / H) * 100))
+    : 0
+
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      className="h-auto w-full"
-      role="img"
-      aria-label={`Sales and received amounts for the last ${data.length} days`}
-    >
-      {ticks.map((tick) => (
-        <g key={tick}>
-          <line
-            x1={padLeft}
-            x2={W - padRight}
-            y1={y(tick)}
-            y2={y(tick)}
-            className="stroke-[#eeecf5]"
-            strokeDasharray={tick === 0 ? undefined : "3 4"}
-          />
-          <text
-            x={padLeft - 8}
-            y={y(tick) + 3.5}
-            textAnchor="end"
-            className="fill-slate-400 text-[10px] font-medium"
-          >
-            {compactINR(tick)}
-          </text>
-        </g>
-      ))}
-
-      {data.map((d, i) => {
-        const cx = padLeft + groupW * (i + 0.5)
-        const salesH = (d.sales / max) * plotH
-        const receivedH = (d.received / max) * plotH
-        const showLabel = i % labelStep === 0 || i === data.length - 1
-
-        return (
-          <g key={d.date} className="group">
-            <rect
-              x={cx - groupW / 2}
-              y={padTop}
-              width={groupW}
-              height={plotH}
-              className="fill-transparent group-hover:fill-violet-50/70"
+    <div className="relative" onMouseLeave={() => setHover(null)}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="h-auto w-full"
+        role="img"
+        aria-label={`Sales and received amounts for the last ${data.length} days`}
+      >
+        {ticks.map((tick) => (
+          <g key={tick}>
+            <line
+              x1={padLeft}
+              x2={W - padRight}
+              y1={y(tick)}
+              y2={y(tick)}
+              className="stroke-[#eeecf5]"
+              strokeDasharray={tick === 0 ? undefined : "3 4"}
             />
-            {salesH > 0 && (
-              <rect
-                x={cx - barW - 1}
-                y={y(d.sales)}
-                width={barW}
-                height={salesH}
-                rx={Math.min(3, barW / 2)}
-                className="fill-emerald-600"
-              />
-            )}
-            {receivedH > 0 && (
-              <rect
-                x={cx + 1}
-                y={y(d.received)}
-                width={barW}
-                height={receivedH}
-                rx={Math.min(3, barW / 2)}
-                className="fill-blue-400"
-              />
-            )}
-            {showLabel && (
-              <text
-                x={cx}
-                y={H - 10}
-                textAnchor="middle"
-                className="fill-slate-500 text-[10px] font-medium"
-              >
-                {shortDayLabel(d.date, data.length)}
-              </text>
-            )}
-            <title>
-              {`${formatDate(d.date)}\nSales: ${formatCurrency(d.sales)}\nReceived: ${formatCurrency(d.received)}`}
-            </title>
+            <text
+              x={padLeft - 8}
+              y={y(tick) + 3.5}
+              textAnchor="end"
+              className="fill-slate-400 text-[10px] font-medium"
+            >
+              {compactINR(tick)}
+            </text>
           </g>
-        )
-      })}
-    </svg>
+        ))}
+
+        {data.map((d, i) => {
+          const cx = padLeft + groupW * (i + 0.5)
+          const salesH = (d.sales / max) * plotH
+          const receivedH = (d.received / max) * plotH
+          const showLabel = i % labelStep === 0 || i === data.length - 1
+          const active = hover === i
+
+          return (
+            <g
+              key={d.date}
+              className="cursor-pointer"
+              onMouseEnter={() => setHover(i)}
+              onClick={() => setHover(i)}
+            >
+              <rect
+                x={cx - groupW / 2}
+                y={padTop}
+                width={groupW}
+                height={plotH}
+                className={active ? "fill-violet-50" : "fill-transparent"}
+              />
+              {salesH > 0 && (
+                <rect
+                  x={cx - barW - 1}
+                  y={y(d.sales)}
+                  width={barW}
+                  height={salesH}
+                  rx={Math.min(3, barW / 2)}
+                  className={active ? "fill-emerald-700" : "fill-emerald-600"}
+                />
+              )}
+              {receivedH > 0 && (
+                <rect
+                  x={cx + 1}
+                  y={y(d.received)}
+                  width={barW}
+                  height={receivedH}
+                  rx={Math.min(3, barW / 2)}
+                  className={active ? "fill-blue-500" : "fill-blue-400"}
+                />
+              )}
+              {showLabel && (
+                <text
+                  x={cx}
+                  y={H - 10}
+                  textAnchor="middle"
+                  className={active ? "fill-slate-800 text-[10px] font-bold" : "fill-slate-500 text-[10px] font-medium"}
+                >
+                  {shortDayLabel(d.date, data.length)}
+                </text>
+              )}
+            </g>
+          )
+        })}
+      </svg>
+
+      {hovered && (
+        <div
+          className="pointer-events-none absolute z-10 min-w-[150px] -translate-x-1/2 -translate-y-full rounded-xl border border-violet-100 bg-white px-3 py-2 shadow-[0_10px_26px_rgba(80,65,130,0.2)]"
+          style={{ left: `${tipLeft}%`, top: `calc(${tipTop}% - 8px)` }}
+          role="status"
+        >
+          <p className="text-[11px] font-bold text-slate-800">{formatDate(hovered.date)}</p>
+          <p className="mt-1 flex items-center justify-between gap-4 text-[11px] text-slate-600">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-sm bg-emerald-600" aria-hidden="true" />
+              Sales
+            </span>
+            <span className="font-bold tabular-nums text-slate-900">{formatCurrency(hovered.sales)}</span>
+          </p>
+          <p className="mt-0.5 flex items-center justify-between gap-4 text-[11px] text-slate-600">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-sm bg-blue-400" aria-hidden="true" />
+              Received
+            </span>
+            <span className="font-bold tabular-nums text-slate-900">{formatCurrency(hovered.received)}</span>
+          </p>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -815,9 +911,12 @@ function TrendChart({ data }) {
 
 export default function Dashboard() {
   const { currentShop } = useShop()
+  const navigate = useNavigate()
   const shopId = currentShop?.id
   const profile = useProfile()
+  const now = useNow()
 
+  const rootRef = useRef(null)
   const today = getLocalDateString()
 
   const [stats, setStats] = useState(EMPTY_STATS)
@@ -828,12 +927,34 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false)
   const [loadError, setLoadError] = useState("")
   const [lastUpdated, setLastUpdated] = useState(null)
+  const [exporting, setExporting] = useState("") // "", "dashboard", "csv", "pdf"
 
   // Default view is "today". The person can switch to Overall or pick dates.
   const [period, setPeriod] = useState({ mode: "today", from: "", to: "" })
   const hasLoaded = useRef(false)
+  const lastRefreshAt = useRef(Date.now())
   const [periodOpen, setPeriodOpen] = useState(false)
   const periodRef = useRef(null)
+
+  // Every time this page opens, start at the top (and don't let the browser restore an old scroll)
+  useLayoutEffect(() => {
+    const previous = "scrollRestoration" in window.history ? window.history.scrollRestoration : null
+    if (previous) window.history.scrollRestoration = "manual"
+    scrollToTop(rootRef.current)
+
+    return () => {
+      if (previous) window.history.scrollRestoration = previous
+    }
+  }, [])
+
+  // The layout changes once the data arrives, so reset the scroll again after the first load
+  const scrolledAfterLoad = useRef(false)
+  useEffect(() => {
+    if (loading || scrolledAfterLoad.current) return
+    scrolledAfterLoad.current = true
+    const frame = requestAnimationFrame(() => scrollToTop(rootRef.current))
+    return () => cancelAnimationFrame(frame)
+  }, [loading])
 
   // Close the period menu on outside click or Escape
   useEffect(() => {
@@ -862,9 +983,10 @@ export default function Dashboard() {
   const [recentLoading, setRecentLoading] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
 
-  // Trend chart + recent payments (loaded separately, never block the page)
+  // Trend chart, recent payments and upcoming dues (loaded separately, never block the page)
   const [trend, setTrend] = useState([])
   const [recentPayments, setRecentPayments] = useState([])
+  const [upcoming, setUpcoming] = useState([])
   const [extrasLoading, setExtrasLoading] = useState(false)
 
   // Prevents an older (slower) request from overwriting newer data
@@ -925,6 +1047,7 @@ export default function Dashboard() {
     setRecentCount(0)
     setTrend([])
     setRecentPayments([])
+    setUpcoming([])
     setLoadError("")
   }, [shopId])
 
@@ -1131,6 +1254,7 @@ export default function Dashboard() {
         )
 
         setLastUpdated(new Date())
+        lastRefreshAt.current = Date.now()
         hasLoaded.current = true
       } catch (error) {
         if (requestId !== dashboardRequest.current) return
@@ -1208,7 +1332,7 @@ export default function Dashboard() {
   }, [shopId, recentPage, refreshKey, range.from, range.to])
 
   /* --------------------------------------------------
-     LOAD TREND CHART + RECENT PAYMENTS
+     LOAD TREND CHART, RECENT PAYMENTS, UPCOMING DUES
   -------------------------------------------------- */
 
   useEffect(() => {
@@ -1219,7 +1343,7 @@ export default function Dashboard() {
     async function loadExtras() {
       setExtrasLoading(true)
 
-      const [billsResult, paymentsResult, recentResult] = await Promise.allSettled([
+      const [billsResult, paymentsResult, recentResult, upcomingResult] = await Promise.allSettled([
         fetchAllRows(() =>
           applyRange(
             supabase.from("bills").select("id, bill_date, grand_total").eq("shop_id", shopId),
@@ -1242,6 +1366,16 @@ export default function Dashboard() {
           .select(`id, amount, payment_mode, ${PAYMENT_DATE_COLUMN}, is_refund, bill_id, customers(name, photo_url)`)
           .eq("shop_id", shopId)
           .order("created_at", { ascending: false })
+          .limit(5),
+        // Unpaid bills that fall due in the next 7 days (independent of the selected period)
+        supabase
+          .from("bills")
+          .select("id, bill_number, amount_due, due_date, customers(name, photo_url)")
+          .eq("shop_id", shopId)
+          .gt("amount_due", 0)
+          .gte("due_date", today)
+          .lte("due_date", shiftDate(today, 7))
+          .order("due_date", { ascending: true })
           .limit(5),
       ])
 
@@ -1278,6 +1412,13 @@ export default function Dashboard() {
         setRecentPayments([])
       }
 
+      if (upcomingResult.status === "fulfilled" && !upcomingResult.value.error) {
+        setUpcoming(upcomingResult.value.data || [])
+      } else {
+        console.warn("Upcoming dues unavailable:", upcomingResult.reason || upcomingResult.value?.error)
+        setUpcoming([])
+      }
+
       setExtrasLoading(false)
     }
 
@@ -1286,15 +1427,36 @@ export default function Dashboard() {
     return () => {
       ignore = true
     }
-  }, [shopId, chartRange.from, chartRange.to, refreshKey])
+  }, [shopId, today, chartRange.from, chartRange.to, refreshKey])
 
-  const handleRefresh = () => {
+  const refreshAll = useCallback(() => {
+    lastRefreshAt.current = Date.now()
     setRefreshKey((key) => key + 1)
     loadDashboard(true)
-  }
+  }, [loadDashboard])
 
-  const handleDashboardPdf = () => {
+  // Keep the numbers fresh: refresh quietly every couple of minutes while the tab is visible
+  useEffect(() => {
+    if (!shopId) return
+
+    const tick = () => {
+      if (document.visibilityState === "visible" && Date.now() - lastRefreshAt.current >= AUTO_REFRESH_MS) {
+        refreshAll()
+      }
+    }
+
+    const id = setInterval(tick, 30000)
+    document.addEventListener("visibilitychange", tick)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener("visibilitychange", tick)
+    }
+  }, [shopId, refreshAll])
+
+  const handleDashboardPdf = async () => {
+    setExporting("dashboard")
     try {
+      await new Promise((resolve) => setTimeout(resolve, 0)) // let the spinner paint first
       exportDashboardPdf({
         shop: currentShop,
         profile,
@@ -1316,10 +1478,13 @@ export default function Dashboard() {
     } catch (error) {
       console.error("Dashboard PDF export failed:", error)
       toast.error("Could not export dashboard PDF", { description: error?.message })
+    } finally {
+      setExporting("")
     }
   }
 
   const handleRecentBillsExport = async (format) => {
+    setExporting(format)
     try {
       const allBills = await fetchAllRows(() =>
         applyRange(
@@ -1343,6 +1508,8 @@ export default function Dashboard() {
       toast.error(`Could not export recent bills ${format.toUpperCase()}`, {
         description: error?.message,
       })
+    } finally {
+      setExporting("")
     }
   }
 
@@ -1410,6 +1577,7 @@ export default function Dashboard() {
 
   const modesTotal = paymentModes.reduce((total, m) => total + m.amount, 0)
   const agingTotal = Object.values(aging).reduce((total, b) => total + b.amount, 0)
+  const upcomingTotal = upcoming.reduce((total, bill) => total + num(bill.amount_due), 0)
 
   const choosePeriod = (mode) => {
     setPeriod({ mode, from: "", to: "" })
@@ -1441,7 +1609,10 @@ export default function Dashboard() {
 
   if (!currentShop) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center rounded-3xl border border-dashed border-violet-200 bg-white/80 p-8 text-center">
+      <div
+        ref={rootRef}
+        className="flex min-h-[400px] items-center justify-center rounded-3xl border border-dashed border-violet-200 bg-white/80 p-8 text-center"
+      >
         <div className="max-w-sm">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
             <Store className="h-7 w-7" aria-hidden="true" />
@@ -1450,22 +1621,89 @@ export default function Dashboard() {
           <p className="mt-2 text-sm leading-6 text-slate-500">
             Select or create a workspace to see your business dashboard.
           </p>
-          <Button asChild className="mt-5 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50">
+          <DashButton asChild className="mt-5">
             <Link to="/settings">Open workspace settings</Link>
-          </Button>
+          </DashButton>
         </div>
       </div>
     )
   }
 
-  if (loading) return <DashboardSkeleton />
+  if (loading) return <DashboardSkeleton innerRef={rootRef} />
 
   /* --------------------------------------------------
      MAIN UI
   -------------------------------------------------- */
 
   return (
-    <div className="min-h-full w-full min-w-0 space-y-4 overflow-x-hidden rounded-2xl bg-[#f7f5ff] px-3 py-4 sm:px-5 sm:py-5 xl:px-6">
+    <div
+      ref={rootRef}
+      className="khaatapro-dashboard min-h-full w-full min-w-0 space-y-4 overflow-x-hidden rounded-2xl bg-[#f7f5ff] px-3 py-4 text-slate-800 dark:bg-slate-950 dark:text-slate-100 sm:px-5 sm:py-5 xl:px-6"
+    >
+
+      <style>{`
+        /* Dashboard-only dark theme corrections. Keep semantic accent colors intact. */
+        html.dark .khaatapro-dashboard [class*="bg-white"] {
+          background-color: #111827 !important;
+        }
+        html.dark .khaatapro-dashboard [class*="hover:bg-white"]:hover {
+          background-color: #1e293b !important;
+        }
+        html.dark .khaatapro-dashboard [class*="hover:bg-slate-50"]:hover,
+        html.dark .khaatapro-dashboard [class*="hover:bg-violet-50"]:hover,
+        html.dark .khaatapro-dashboard [class*="hover:bg-emerald-50"]:hover,
+        html.dark .khaatapro-dashboard [class*="hover:bg-blue-50"]:hover,
+        html.dark .khaatapro-dashboard [class*="hover:bg-amber-50"]:hover,
+        html.dark .khaatapro-dashboard [class*="hover:bg-rose-50"]:hover {
+          background-color: #1e293b !important;
+        }
+        html.dark .khaatapro-dashboard [class*="border-white"],
+        html.dark .khaatapro-dashboard [class*="border-[#e"],
+        html.dark .khaatapro-dashboard [class*="border-[#f"],
+        html.dark .khaatapro-dashboard [class*="border-violet-100"],
+        html.dark .khaatapro-dashboard [class*="border-violet-200"] {
+          border-color: #334155 !important;
+        }
+        html.dark .khaatapro-dashboard [class~="text-slate-900"],
+        html.dark .khaatapro-dashboard [class~="text-slate-800"],
+        html.dark .khaatapro-dashboard [class~="text-slate-700"],
+        html.dark .khaatapro-dashboard [class~="text-slate-600"],
+        html.dark .khaatapro-dashboard [class*="text-[#171a36]"],
+        html.dark .khaatapro-dashboard [class*="text-[#151934]"] {
+          color: #e2e8f0 !important;
+        }
+        html.dark .khaatapro-dashboard [class~="text-slate-500"],
+        html.dark .khaatapro-dashboard [class~="text-slate-400"] {
+          color: #94a3b8 !important;
+        }
+        html.dark .khaatapro-dashboard [class*="bg-[#f7f5ff]"] {
+          background-color: #020617 !important;
+        }
+        html.dark .khaatapro-dashboard [class*="bg-slate-50"] {
+          background-color: #0f172a !important;
+        }
+        html.dark .khaatapro-dashboard [class*="bg-slate-100"] {
+          background-color: #1e293b !important;
+        }
+        html.dark .khaatapro-dashboard [class*="stroke-[#eeecf5]"] {
+          stroke: #334155 !important;
+        }
+        html.dark .khaatapro-dashboard [class*="fill-slate-800"] {
+          fill: #e2e8f0 !important;
+        }
+        html.dark .khaatapro-dashboard [class*="fill-slate-500"] {
+          fill: #94a3b8 !important;
+        }
+        html.dark .khaatapro-dashboard [class*="hover:bg-white"]:hover,
+        html.dark .khaatapro-dashboard [class*="hover:bg-slate-50"]:hover,
+        html.dark .khaatapro-dashboard [class*="hover:bg-violet-50"]:hover,
+        html.dark .khaatapro-dashboard [class*="hover:bg-emerald-50"]:hover,
+        html.dark .khaatapro-dashboard [class*="hover:bg-blue-50"]:hover,
+        html.dark .khaatapro-dashboard [class*="hover:bg-amber-50"]:hover,
+        html.dark .khaatapro-dashboard [class*="hover:bg-rose-50"]:hover {
+          background-color: #1e293b !important;
+        }
+      `}</style>
       {/* PAGE HEADER */}
 
       <header className="flex min-w-0 flex-col justify-between gap-4 xl:flex-row xl:items-center">
@@ -1474,7 +1712,7 @@ export default function Dashboard() {
             to="/settings"
             aria-label="Open profile settings"
             title={profile?.email || "Profile settings"}
-            className="rounded-full transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+            className={`cursor-pointer rounded-full transition-transform hover:scale-[1.04] ${FOCUS_RING}`}
           >
             <ProfileAvatar
               name={profile?.name}
@@ -1498,9 +1736,20 @@ export default function Dashboard() {
               {firstName && <span className="text-emerald-700">, {firstName}</span>}
             </h1>
 
-            <p className="mt-0.5 text-sm text-slate-600">
-              Showing figures for{" "}
-              <strong className="font-semibold text-slate-800">{periodLabel}</strong>.
+            <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-sm text-slate-600">
+              <span>
+                Showing figures for{" "}
+                <strong className="font-semibold text-slate-800">{periodLabel}</strong>.
+              </span>
+              {lastUpdated && (
+                <span className="flex items-center gap-1.5 text-xs text-slate-500" aria-live="polite">
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${refreshing ? "animate-pulse bg-amber-500" : "bg-emerald-500"}`}
+                    aria-hidden="true"
+                  />
+                  {refreshing ? "Updating…" : `Updated ${timeAgo(lastUpdated, now)}`}
+                </span>
+              )}
             </p>
           </div>
         </div>
@@ -1512,12 +1761,12 @@ export default function Dashboard() {
               aria-haspopup="menu"
               aria-expanded={periodOpen}
               onClick={() => setPeriodOpen((open) => !open)}
-              className="flex h-11 w-full max-w-full items-center gap-2 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:w-auto sm:max-w-[270px]"
+              className={cn(BTN, "w-full justify-start sm:w-auto sm:max-w-[270px]")}
             >
               <CalendarDays className="h-4 w-4 shrink-0 text-slate-600" aria-hidden="true" />
               <span className="truncate">{periodLabel}</span>
               <ChevronDown
-                className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${
+                className={`ml-auto h-4 w-4 shrink-0 text-slate-500 transition-transform ${
                   periodOpen ? "rotate-180" : ""
                 }`}
                 aria-hidden="true"
@@ -1528,7 +1777,7 @@ export default function Dashboard() {
               <>
                 {/* Dim background on mobile; tap it to close */}
                 <div
-                  className="fixed inset-0 z-40 bg-slate-900/35 lg:hidden"
+                  className="fixed inset-0 z-40 cursor-pointer bg-slate-900/35 lg:hidden"
                   onClick={() => setPeriodOpen(false)}
                   aria-hidden="true"
                 />
@@ -1546,9 +1795,9 @@ export default function Dashboard() {
                         role="menuitemradio"
                         aria-checked={active}
                         onClick={() => choosePeriod(option.mode)}
-                        className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${
+                        className={`flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${FOCUS_RING} ${
                           active
-                            ? "bg-emerald-50 font-semibold text-emerald-800"
+                            ? "bg-violet-100 font-semibold text-violet-900"
                             : "text-slate-700 hover:bg-violet-50"
                         }`}
                       >
@@ -1561,7 +1810,7 @@ export default function Dashboard() {
                   <div className="mt-2 border-t border-[#eeecf5] px-1 pb-1 pt-3">
                     <p
                       className={`mb-2 px-2 text-xs font-semibold ${
-                        period.mode === "custom" ? "text-emerald-800" : "text-slate-500"
+                        period.mode === "custom" ? "text-violet-800" : "text-slate-500"
                       }`}
                     >
                       Pick dates
@@ -1575,7 +1824,7 @@ export default function Dashboard() {
                           value={range.from || ""}
                           max={range.to || today}
                           onChange={(e) => changeCustomDate("from", e.target.value)}
-                          className="h-9 w-full rounded-lg border border-violet-200 bg-white px-2 text-xs text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                          className={`h-9 w-full cursor-pointer rounded-lg border border-violet-200 bg-white px-2 text-xs text-slate-700 ${FOCUS_RING}`}
                         />
                       </label>
 
@@ -1587,7 +1836,7 @@ export default function Dashboard() {
                           min={range.from || undefined}
                           max={today}
                           onChange={(e) => changeCustomDate("to", e.target.value)}
-                          className="h-9 w-full rounded-lg border border-violet-200 bg-white px-2 text-xs text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                          className={`h-9 w-full cursor-pointer rounded-lg border border-violet-200 bg-white px-2 text-xs text-slate-700 ${FOCUS_RING}`}
                         />
                       </label>
                     </div>
@@ -1597,64 +1846,51 @@ export default function Dashboard() {
                       always show current totals.
                     </p>
 
-                    <Button
-                      type="button"
-                      onClick={() => setPeriodOpen(false)}
-                      className="mt-3 h-11 w-full rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
-                    >
+                    <DashButton type="button" onClick={() => setPeriodOpen(false)} className="mt-3 w-full">
                       Done
-                    </Button>
+                    </DashButton>
                   </div>
                 </div>
               </>
             )}
           </div>
 
-          <Button
+          <DashButton
             type="button"
-            variant="outline"
-            onClick={handleRefresh}
+            onClick={refreshAll}
             disabled={refreshing}
             aria-label={refreshing ? "Refreshing dashboard" : "Refresh dashboard"}
             title={refreshing ? "Refreshing dashboard" : "Refresh dashboard"}
-            className="h-11 w-full justify-center gap-2 rounded-xl border border-violet-200 bg-white/90 px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50 sm:w-auto sm:px-4"
           >
             <RefreshCw
               className={`h-4 w-4 shrink-0 ${refreshing ? "animate-spin" : ""}`}
               aria-hidden="true"
             />
-            <span>{refreshing ? "Refreshing..." : "Refresh"}</span>
-          </Button>
+            <span>{refreshing ? "Refreshing…" : "Refresh"}</span>
+          </DashButton>
 
-          <Button
-            asChild
-            variant="outline"
-            className="h-11 w-full justify-center gap-2 rounded-xl border border-violet-200 bg-white/90 px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50 sm:w-auto sm:px-4"
-          >
+          <DashButton asChild>
             <Link to="/bills">
               <Receipt className="h-4 w-4" aria-hidden="true" />
               All bills
             </Link>
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleDashboardPdf}
-            className="h-11 w-full justify-center gap-2 rounded-xl border border-violet-200 bg-white/90 px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50 sm:w-auto sm:px-4"
-          >
-            <FileText className="h-4 w-4" aria-hidden="true" />
-            Dashboard PDF
-          </Button>
+          </DashButton>
 
-          <Button
-            asChild
-            className="h-11 w-full justify-center gap-2 rounded-xl border border-violet-200 bg-white/90 px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50 sm:w-auto sm:px-4"
-          >
+          <DashButton type="button" onClick={handleDashboardPdf} disabled={exporting !== ""}>
+            {exporting === "dashboard" ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <FileText className="h-4 w-4" aria-hidden="true" />
+            )}
+            {exporting === "dashboard" ? "Exporting…" : "Dashboard PDF"}
+          </DashButton>
+
+          <DashButton asChild>
             <Link to="/bills/new">
-              <Plus className="h-5 w-5" aria-hidden="true" />
+              <Plus className="h-4 w-4" aria-hidden="true" />
               Create bill
             </Link>
-          </Button>
+          </DashButton>
         </div>
       </header>
 
@@ -1666,21 +1902,16 @@ export default function Dashboard() {
           className="flex flex-col items-stretch justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 sm:flex-row sm:items-center"
         >
           <div className="flex min-w-0 items-start gap-2 text-sm text-rose-700">
-            <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             <span>
               Could not load your latest figures. Check your connection and try again.
               <span className="ml-1 text-xs text-rose-500">({loadError})</span>
             </span>
           </div>
 
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => loadDashboard()}
-            className="h-11 w-full shrink-0 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50 sm:w-auto"
-          >
+          <DashButton type="button" onClick={() => loadDashboard()} className="w-full shrink-0 sm:w-auto">
             Try again
-          </Button>
+          </DashButton>
         </div>
       )}
 
@@ -1697,16 +1928,12 @@ export default function Dashboard() {
             </span>
           </div>
 
-          <Button
-            asChild
-            size="sm"
-            className="shrink-0 gap-2 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
-          >
+          <DashButton asChild className="shrink-0">
             <Link to="/reminders">
               Send reminders
-              <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </Link>
-          </Button>
+          </DashButton>
         </div>
       )}
 
@@ -1883,39 +2110,38 @@ export default function Dashboard() {
               description={`Newest first · ${shortLabel}`}
               action={
                 <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
-                  <Button
+                  <DashButton
+                    small
                     type="button"
-                    variant="outline"
-                    size="sm"
                     onClick={() => handleRecentBillsExport("csv")}
-                    disabled={recentLoading || recentCount === 0}
-                    className="h-10 gap-1.5 rounded-xl border border-violet-200 bg-white/90 px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50"
+                    disabled={recentLoading || recentCount === 0 || exporting !== ""}
                   >
-                    <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
-                    Export CSV
-                  </Button>
-                  <Button
+                    {exporting === "csv" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    {exporting === "csv" ? "Exporting…" : "Export CSV"}
+                  </DashButton>
+                  <DashButton
+                    small
                     type="button"
-                    variant="outline"
-                    size="sm"
                     onClick={() => handleRecentBillsExport("pdf")}
-                    disabled={recentLoading || recentCount === 0}
-                    className="h-10 gap-1.5 rounded-xl border border-violet-200 bg-white/90 px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50"
+                    disabled={recentLoading || recentCount === 0 || exporting !== ""}
                   >
-                    <FileText className="h-4 w-4" aria-hidden="true" />
-                    Export PDF
-                  </Button>
-                  <Button
-                    asChild
-                    variant="outline"
-                    size="sm"
-                    className="col-span-2 h-10 gap-2 rounded-xl border border-violet-200 bg-white/90 px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50 sm:col-span-1"
-                  >
+                    {exporting === "pdf" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <FileText className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    {exporting === "pdf" ? "Exporting…" : "Export PDF"}
+                  </DashButton>
+                  <DashButton small asChild className="col-span-2 sm:col-span-1">
                     <Link to="/bills">
                       View all
                       <ChevronRight className="h-4 w-4" aria-hidden="true" />
                     </Link>
-                  </Button>
+                  </DashButton>
                 </div>
               }
             />
@@ -1935,12 +2161,12 @@ export default function Dashboard() {
                 <p className="mt-1 max-w-xs text-xs leading-5 text-slate-500">
                   Try another date range, or create a new bill.
                 </p>
-                <Button asChild className="mt-4 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50">
+                <DashButton asChild className="mt-4">
                   <Link to="/bills/new">
-                    <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+                    <Plus className="h-4 w-4" aria-hidden="true" />
                     Create bill
                   </Link>
-                </Button>
+                </DashButton>
               </div>
             ) : (
               <>
@@ -1973,7 +2199,12 @@ export default function Dashboard() {
                         return (
                           <tr
                             key={bill.id}
-                            className="border-b border-[#eeecf5] transition-colors last:border-0 hover:bg-[#f9f8ff]"
+                            tabIndex={0}
+                            onClick={() => navigate(`/bills/${bill.id}`)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") navigate(`/bills/${bill.id}`)
+                            }}
+                            className={`cursor-pointer border-b border-[#eeecf5] transition-colors last:border-0 hover:bg-[#f9f8ff] ${FOCUS_RING}`}
                           >
                             <td className="px-3 py-3">
                               <div className="flex items-center gap-2.5">
@@ -2022,8 +2253,9 @@ export default function Dashboard() {
                             <td className="px-3 py-3">
                               <Link
                                 to={`/bills/${bill.id}`}
+                                onClick={(event) => event.stopPropagation()}
                                 aria-label={`View bill ${bill.bill_number || ""} for ${name}`}
-                                className="mx-auto flex h-8 w-[68px] items-center justify-center gap-1.5 rounded-lg border border-violet-200 bg-white text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                                className={`mx-auto flex h-8 w-[68px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-violet-200 bg-white text-xs font-semibold text-slate-700 shadow-sm transition-all hover:border-violet-300 hover:bg-violet-50 ${FOCUS_RING}`}
                               >
                                 <Eye className="h-3.5 w-3.5" aria-hidden="true" />
                                 View
@@ -2053,17 +2285,15 @@ export default function Dashboard() {
                     aria-label="Recent bills pages"
                     className="flex flex-wrap items-center justify-end gap-1.5"
                   >
-                    <Button
+                    <button
                       type="button"
-                      variant="outline"
-                      size="icon"
                       aria-label="Previous page"
                       disabled={recentPage <= 1 || recentLoading}
                       onClick={() => setRecentPage((page) => Math.max(1, page - 1))}
-                      className="h-9 w-9 rounded-full border border-violet-200 bg-white p-0 text-slate-700 shadow-sm hover:bg-violet-50 disabled:opacity-40"
+                      className={ICON_BTN}
                     >
                       <ChevronLeft className="h-4 w-4" />
-                    </Button>
+                    </button>
 
                     {paginationItems.map((item) =>
                       typeof item === "string" ? (
@@ -2075,36 +2305,33 @@ export default function Dashboard() {
                           …
                         </span>
                       ) : (
-                        <Button
+                        <button
                           key={item}
                           type="button"
-                          variant={recentPage === item ? "default" : "outline"}
                           aria-label={`Page ${item}`}
                           aria-current={recentPage === item ? "page" : undefined}
                           disabled={recentLoading}
                           onClick={() => setRecentPage(item)}
-                          className={`h-9 min-w-9 rounded-full px-0 text-xs font-semibold shadow-sm transition-colors ${
-                            recentPage === item
-                              ? "border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800"
-                              : "border-violet-200 bg-white text-slate-700 hover:bg-violet-50"
-                          }`}
+                          className={cn(
+                            ICON_BTN,
+                            "min-w-9 text-xs font-semibold",
+                            recentPage === item && "border-violet-300 bg-violet-100 text-violet-900"
+                          )}
                         >
                           {item}
-                        </Button>
+                        </button>
                       )
                     )}
 
-                    <Button
+                    <button
                       type="button"
-                      variant="outline"
-                      size="icon"
                       aria-label="Next page"
                       disabled={recentPage >= totalRecentPages || recentLoading}
                       onClick={() => setRecentPage((page) => Math.min(totalRecentPages, page + 1))}
-                      className="h-9 w-9 rounded-full border border-violet-200 bg-white p-0 text-slate-700 shadow-sm hover:bg-violet-50 disabled:opacity-40"
+                      className={ICON_BTN}
                     >
                       <ChevronRight className="h-4 w-4" />
-                    </Button>
+                    </button>
                   </nav>
                 </div>
               </>
@@ -2122,17 +2349,12 @@ export default function Dashboard() {
               title="Business performance"
               description="How much of your billing has been collected."
               action={
-                <Button
-                  asChild
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 gap-2 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
-                >
+                <DashButton small asChild className="shrink-0">
                   <Link to="/bills">
                     Review bills
                     <ArrowRight className="h-4 w-4" aria-hidden="true" />
                   </Link>
-                </Button>
+                </DashButton>
               }
             />
 
@@ -2303,6 +2525,59 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
+          {/* UPCOMING COLLECTIONS */}
+
+          <Card className={cardClass}>
+            <SectionHeader
+              icon={CalendarClock}
+              title="Upcoming collections"
+              description={
+                upcoming.length > 0
+                  ? `${formatCurrency(upcomingTotal)} due in the next 7 days`
+                  : "Bills falling due in the next 7 days"
+              }
+            />
+
+            {upcoming.length === 0 ? (
+              <EmptyNote
+                icon={CalendarClock}
+                title={extrasLoading ? "Loading…" : "Nothing due this week"}
+                description={extrasLoading ? undefined : "Unpaid bills due within 7 days will appear here."}
+              />
+            ) : (
+              <ul className="divide-y divide-[#eeecf5]">
+                {upcoming.map((bill) => {
+                  const diff = daysBetween(today, String(bill.due_date).slice(0, 10))
+                  const when = diff <= 0 ? "Due today" : diff === 1 ? "Tomorrow" : `In ${diff} days`
+                  const name = bill.customers?.name || "Walk-in Customer"
+
+                  return (
+                    <li key={bill.id}>
+                      <Link
+                        to={`/bills/${bill.id}`}
+                        className={`flex cursor-pointer items-center justify-between gap-3 px-5 py-3.5 transition-colors hover:bg-[#faf9ff] ${FOCUS_RING}`}
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <CustomerAvatar name={name} photoUrl={bill.customers?.photo_url} className="h-10 w-10" />
+                          <div className="min-w-0">
+                            <p className="truncate text-[13px] font-bold text-slate-800">{name}</p>
+                            <p className="mt-0.5 text-[11px] text-slate-500">
+                              {bill.bill_number || "Bill"} ·{" "}
+                              <span className={diff <= 0 ? "font-semibold text-amber-700" : ""}>{when}</span>
+                            </p>
+                          </div>
+                        </div>
+                        <p className="shrink-0 text-sm font-bold tabular-nums text-slate-900">
+                          {formatCurrency(bill.amount_due)}
+                        </p>
+                      </Link>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </Card>
+
           {/* PAYMENT MODES */}
 
           <Card className={cardClass}>
@@ -2423,17 +2698,12 @@ export default function Dashboard() {
               title="Pending payments"
               description="Customers who owe you the most."
               action={
-                <Button
-                  asChild
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 gap-2 h-11 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
-                >
+                <DashButton small asChild className="shrink-0">
                   <Link to="/dues">
                     View all
                     <ChevronRight className="h-4 w-4" aria-hidden="true" />
                   </Link>
-                </Button>
+                </DashButton>
               }
             />
 
@@ -2473,7 +2743,7 @@ export default function Dashboard() {
                         />
 
                         <div className="min-w-0">
-                          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+                          <div className="flex min-w-0 flex-wrap items-center gap-2">
                             <p className="truncate text-sm font-bold text-slate-800">{customer.name}</p>
                             {index === 0 && (
                               <span className="shrink-0 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-600">
@@ -2500,16 +2770,12 @@ export default function Dashboard() {
                 </ul>
 
                 <div className="border-t border-[#eeecf5] px-5 py-3">
-                  <Button
-                    asChild
-                    variant="outline"
-                    className="h-11 w-full gap-2 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
-                  >
+                  <DashButton asChild className="w-full">
                     <Link to="/dues">
                       Review all pending payments
                       <ArrowRight className="h-4 w-4" aria-hidden="true" />
                     </Link>
-                  </Button>
+                  </DashButton>
                 </div>
               </>
             )}
@@ -2582,7 +2848,7 @@ export default function Dashboard() {
                   return (
                     <li key={payment.id}>
                       {payment.bill_id ? (
-                        <Link to={`/bills/${payment.bill_id}`} className={rowClass}>
+                        <Link to={`/bills/${payment.bill_id}`} className={cn(rowClass, "cursor-pointer", FOCUS_RING)}>
                           {row}
                         </Link>
                       ) : (
@@ -2613,7 +2879,7 @@ export default function Dashboard() {
             ? `Last updated at ${lastUpdated.toLocaleTimeString("en-IN", {
                 hour: "2-digit",
                 minute: "2-digit",
-              })}`
+              })} · refreshes automatically`
             : "Not updated yet"}
         </span>
       </footer>

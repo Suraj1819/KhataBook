@@ -27,14 +27,14 @@ const RECENT_KEY = "khaatapro-command-center-recent"
 
 // ONE button style for the whole page (no green buttons anywhere)
 const BTN =
-  "inline-flex h-10 min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-violet-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:border-violet-300 hover:bg-violet-50 hover:text-violet-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:pointer-events-none disabled:opacity-50"
+  "inline-flex h-10 min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm transition-all hover:border-violet-300 hover:bg-violet-50 hover:text-violet-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-violet-500 dark:hover:bg-slate-800 dark:hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:pointer-events-none disabled:opacity-50"
 
 const CARD =
-  "overflow-hidden rounded-[20px] border border-white/80 bg-white/85 shadow-[0_5px_18px_rgba(80,65,130,0.07)] backdrop-blur-sm"
+  "overflow-hidden rounded-[20px] border border-white/80 bg-white dark:bg-slate-900/85 dark:bg-slate-900/90 shadow-[0_5px_18px_rgba(80,65,130,0.07)] dark:border-slate-700/80 dark:bg-slate-900/90 backdrop-blur-sm"
 const FIELD =
-  "h-10 w-full rounded-xl border border-violet-200 bg-white px-3 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+  "h-10 w-full rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
 const INPUT =
-  "h-11 w-full rounded-xl border border-violet-100 bg-white px-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-violet-400 focus:ring-2 focus:ring-violet-200"
+  "h-11 w-full rounded-xl border border-violet-100 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm text-slate-800 dark:text-slate-100 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 transition placeholder:text-slate-400 focus:border-violet-400 focus:ring-2 focus:ring-violet-200"
 
 const TYPE_META = {
   customer: { label: "Customer", plural: "Customers", icon: Users, tone: "bg-emerald-100/80 text-emerald-700" },
@@ -43,7 +43,7 @@ const TYPE_META = {
   payment: { label: "Payment", plural: "Payments", icon: CreditCard, tone: "bg-blue-100/80 text-blue-700" },
   advance: { label: "Advance", plural: "Advances", icon: Wallet, tone: "bg-pink-100/80 text-pink-700" },
   khata: { label: "Khata entry", plural: "Khata entries", icon: BookOpen, tone: "bg-amber-100 text-amber-700" },
-  attachment: { label: "Attachment", plural: "Attachments", icon: Paperclip, tone: "bg-slate-100 text-slate-600" },
+  attachment: { label: "Attachment", plural: "Attachments", icon: Paperclip, tone: "bg-slate-100 text-slate-600 dark:text-slate-300" },
   page: { label: "Page", plural: "Pages", icon: Compass, tone: "bg-violet-100/80 text-violet-700" },
 }
 const TYPE_ORDER = ["customer", "invoice", "item", "payment", "advance", "khata", "attachment", "page"]
@@ -187,7 +187,7 @@ function statusTone(status) {
   if (/overdue|unpaid|refund|archived/.test(text)) return "bg-rose-50 text-rose-700"
   if (/partial|due|advance|you gave|returned/.test(text)) return "bg-amber-50 text-amber-700"
   if (/paid|received|active|available/.test(text)) return "bg-emerald-50 text-emerald-700"
-  return "bg-slate-100 text-slate-600"
+  return "bg-slate-100 text-slate-600 dark:text-slate-300"
 }
 
 // Reads every page of a table (Supabase returns at most 1000 rows per request)
@@ -226,11 +226,12 @@ function readRecent() {
    BUILD A SINGLE SEARCHABLE LIST FROM EVERY TABLE
 ================================================== */
 
-function buildRecords({ customers, bills, items, payments, advances, khata, attachments }) {
+function buildRecords({ customers, bills, items, payments, advances, allocations = [], khata, attachments }) {
   const today = localDate(new Date())
   const customerMap = new Map(customers.map((row) => [String(row.id), row]))
   const billMap = new Map(bills.map((row) => [String(row.id), row]))
   const itemCount = new Map()
+  const advanceMap = new Map(advances.map((row) => [String(row.id), row]))
   items.forEach((row) => itemCount.set(String(row.bill_id), (itemCount.get(String(row.bill_id)) || 0) + 1))
 
   const stats = new Map()
@@ -330,6 +331,23 @@ function buildRecords({ customers, bills, items, payments, advances, khata, atta
     })
   })
 
+  // Every use of a customer advance is a separate ledger event. Keep it
+  // searchable even when the advance has already been fully consumed.
+  allocations.forEach((row) => {
+    const advance = advanceMap.get(String(row.advance_id))
+    const bill = billMap.get(String(row.bill_id))
+    const customer = customerMap.get(String(advance?.customer_id || bill?.customer_id))
+    out.push({
+      key: `allocation-${row.id}`, type: "advance", id: row.id,
+      title: customer?.name || "Customer",
+      subtitle: [`Adjusted against ${bill?.bill_number || "bill"}`, advance ? `Advance ${formatCurrency(advance.amount)}` : "Customer advance"].join(" · "),
+      amount: num(row.amount), date: row.created_at,
+      status: "Advance adjusted", data: { ...row, is_allocation: true, advance, bill },
+      customer, bill,
+      text: searchableText(row, [customer?.name, customer?.mobile, bill?.bill_number, "advance adjusted allocation"]),
+    })
+  })
+
   // Personal Khata is an independent ledger. Never link its entries to
   // Customers/Bills; the saved balance_after is its own outstanding balance.
   khata.forEach((row) => {
@@ -382,6 +400,7 @@ function routeFor(record) {
   if (type === "invoice") return `/bills/${record.id}`
   if (type === "item") return data.bill_id ? `/bills/${data.bill_id}` : "/bills"
   if (type === "payment") return data.bill_id ? `/bills/${data.bill_id}` : data.customer_id ? `/customers/${data.customer_id}` : "/payments"
+  if (type === "advance" && data.is_allocation) return data.bill_id ? `/bills/${data.bill_id}` : data.advance?.customer_id ? `/customers/${data.advance.customer_id}` : "/payments"
   if (type === "advance") return data.customer_id ? `/customers/${data.customer_id}` : "/customers"
   if (type === "attachment") return data.bill_id ? `/bills/${data.bill_id}` : data.customer_id ? `/customers/${data.customer_id}` : "/bills"
   if (type === "khata") {
@@ -510,6 +529,29 @@ function detailSections(record) {
       add("Balance due", bill ? money(bill.amount_due) : "")
     })
     section("Notes", FileText, (add) => add("Notes", data.notes, true))
+  } else if (type === "advance" && data.is_allocation) {
+    section("Advance adjustment", Wallet, (add) => {
+      add("Adjusted amount", money(data.amount))
+      add("Adjustment date", day(data.created_at))
+      add("Record type", "Advance adjusted against bill")
+      add("Advance record ID", data.advance_id)
+    })
+    section("Linked bill", Receipt, (add) => {
+      add("Bill number", bill?.bill_number)
+      add("Bill date", day(bill?.bill_date))
+      add("Bill total", bill ? money(bill.grand_total) : "")
+      add("Balance due", bill ? money(bill.amount_due) : "")
+    })
+    section("Original advance", Wallet, (add) => {
+      add("Original amount", money(data.advance?.amount))
+      add("Current remaining", money(data.advance?.remaining_amount))
+      add("Received on", day(data.advance?.created_at))
+      add("Notes", data.advance?.notes, true)
+    })
+    section("Customer", UserRound, (add) => {
+      add("Name", customer?.name)
+      add("Mobile", customer?.mobile)
+    })
   } else if (type === "advance") {
     section("Advance", Wallet, (add) => {
       add("Original amount", money(data.amount))
@@ -601,6 +643,13 @@ function summaryTiles(record, live) {
       { label: "Date", value: data.payment_date ? formatDate(data.payment_date) : "—" },
     ]
   }
+  if (type === "advance" && data.is_allocation) {
+    return [
+      { label: "Adjusted", value: money(data.amount) },
+      { label: "Original advance", value: money(data.advance?.amount) },
+      { label: "Remaining advance", value: money(data.advance?.remaining_amount), tone: "good" },
+    ]
+  }
   if (type === "advance") {
     return [
       { label: "Original", value: money(data.amount) },
@@ -645,15 +694,15 @@ function SummaryCard({ label, value, detail, icon: Icon, tone, active, onClick }
         active && "ring-2 ring-violet-500/70"
       )}
     >
-      <Card className="h-full overflow-hidden rounded-[20px] border border-white/80 bg-white/80 shadow-[0_4px_15px_rgba(80,65,130,0.07)] backdrop-blur-sm transition hover:bg-white">
+      <Card className="h-full overflow-hidden rounded-[20px] border border-white/80 bg-white dark:bg-slate-900/80 dark:bg-slate-900/90 shadow-[0_4px_15px_rgba(80,65,130,0.07)] backdrop-blur-sm transition hover:bg-white dark:bg-slate-900">
         <div className="flex min-w-0 items-center gap-3 p-4">
           <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-full", tone)}>
             <Icon className="h-6 w-6" strokeWidth={1.9} aria-hidden="true" />
           </div>
           <div className="min-w-0">
-            <p className="truncate text-[13px] font-medium text-slate-600">{label}</p>
-            <p className="mt-0.5 text-[22px] font-bold leading-tight tracking-tight text-[#151934] tabular-nums">{value}</p>
-            <p className="mt-0.5 truncate text-xs font-semibold text-slate-500">{detail}</p>
+            <p className="truncate text-[13px] font-medium text-slate-600 dark:text-slate-300">{label}</p>
+            <p className="mt-0.5 text-[22px] font-bold leading-tight tracking-tight text-[#151934] dark:text-slate-100 tabular-nums">{value}</p>
+            <p className="mt-0.5 truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{detail}</p>
           </div>
         </div>
       </Card>
@@ -678,7 +727,7 @@ function RecordAvatar({ record, className }) {
     const name = customer?.name || record?.data?.customer_name || record?.title
     const photo = khataPhoto || resolveCustomerPhoto(customer?.photo_url || customer?.avatar_url || customer?.profile_photo)
     return (
-      <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-violet-100 bg-violet-50 text-sm font-bold text-violet-700", className)}>
+      <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-violet-100 dark:border-slate-700 bg-violet-50 text-sm font-bold text-violet-700", className)}>
         {photo ? <img src={photo} alt={`${name || "Profile"} photo`} loading="lazy" className="h-full w-full object-cover" /> : getInitials(name)}
       </span>
     )
@@ -709,7 +758,7 @@ function AmountCell({ record }) {
   if (record.type === "page") return <span className="text-slate-400">—</span>
   return (
     <>
-      <span className="text-sm font-bold tabular-nums text-[#151934]">{formatCurrency(record.amount)}</span>
+      <span className="text-sm font-bold tabular-nums text-[#151934] dark:text-slate-100">{formatCurrency(record.amount)}</span>
       {record.type !== "invoice" && record.due > 0 && (
         <span className="mt-0.5 block text-[11px] font-semibold tabular-nums text-rose-600">
           {record.type === "khata" ? "Khata outstanding" : "Record due"} {formatCurrency(record.due)}
@@ -729,7 +778,7 @@ function RowAction({ label, icon: Icon, onClick }) {
       title={label}
       aria-label={label}
       onClick={onClick}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-violet-200 bg-white text-slate-600 shadow-sm transition hover:border-violet-300 hover:bg-violet-50 hover:text-violet-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 shadow-sm transition hover:border-violet-300 hover:bg-violet-50 hover:text-violet-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
     >
       <Icon className="h-4 w-4" aria-hidden="true" />
     </button>
@@ -744,7 +793,7 @@ function SidePanel({ icon: Icon, title, action, children }) {
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-100/80 text-violet-700">
             <Icon className="h-4 w-4" aria-hidden="true" />
           </span>
-          <h2 className="text-sm font-bold text-[#171a36]">{title}</h2>
+          <h2 className="text-sm font-bold text-[#171a36] dark:text-slate-100">{title}</h2>
         </div>
         {action}
       </div>
@@ -834,7 +883,7 @@ function Modal({ label, onClose, locked = false, layer = 100, size = "max-w-2xl"
         aria-label={label}
         tabIndex={-1}
         className={cn(
-          "relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-[24px] border border-white/80 bg-[#f7f5ff] shadow-[0_24px_60px_rgba(60,45,110,0.35)] outline-none",
+          "relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-[24px] border border-white/80 bg-[#f7f5ff] dark:bg-slate-950 shadow-[0_24px_60px_rgba(60,45,110,0.35)] outline-none",
           size
         )}
       >
@@ -846,11 +895,11 @@ function Modal({ label, onClose, locked = false, layer = 100, size = "max-w-2xl"
 
 function ModalHeader({ leading, eyebrow, title, meta, onClose, disabled }) {
   return (
-    <div className="flex items-start gap-4 border-b border-[#eae7f4] bg-white px-5 py-5 sm:px-6">
+    <div className="flex items-start gap-4 border-b border-[#eae7f4] bg-white dark:bg-slate-900 px-5 py-5 sm:px-6">
       {leading}
       <div className="min-w-0 flex-1">
         {eyebrow && <p className="text-[11px] font-bold uppercase tracking-wider text-violet-600">{eyebrow}</p>}
-        <h2 className="mt-0.5 truncate text-xl font-bold tracking-tight text-[#171a36]">{title}</h2>
+        <h2 className="mt-0.5 truncate text-xl font-bold tracking-tight text-[#171a36] dark:text-slate-100">{title}</h2>
         {meta && <div className="mt-2 flex flex-wrap items-center gap-2">{meta}</div>}
       </div>
       <button
@@ -858,7 +907,7 @@ function ModalHeader({ leading, eyebrow, title, meta, onClose, disabled }) {
         onClick={onClose}
         disabled={disabled}
         aria-label="Close dialog"
-        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-violet-200 bg-white text-slate-500 shadow-sm transition hover:bg-violet-50 hover:text-violet-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:opacity-50"
+        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 shadow-sm transition hover:bg-violet-50 hover:text-violet-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:opacity-50"
       >
         <X className="h-4 w-4" aria-hidden="true" />
       </button>
@@ -868,7 +917,7 @@ function ModalHeader({ leading, eyebrow, title, meta, onClose, disabled }) {
 
 function DialogSection({ icon: Icon, title, count, children }) {
   return (
-    <section className="rounded-[20px] border border-white bg-white p-4 shadow-[0_4px_14px_rgba(80,65,130,0.06)]">
+    <section className="rounded-[20px] border border-white bg-white dark:bg-slate-900 p-4 shadow-[0_4px_14px_rgba(80,65,130,0.06)]">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           {Icon && (
@@ -876,7 +925,7 @@ function DialogSection({ icon: Icon, title, count, children }) {
               <Icon className="h-4 w-4" aria-hidden="true" />
             </span>
           )}
-          <h3 className="text-sm font-bold text-[#171a36]">{title}</h3>
+          <h3 className="text-sm font-bold text-[#171a36] dark:text-slate-100">{title}</h3>
         </div>
         {count !== undefined && (
           <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-bold text-violet-700">{count}</span>
@@ -893,7 +942,7 @@ function FieldGrid({ rows }) {
       {rows.map((row) => (
         <div key={row.label} className={cn("min-w-0", row.wide && "sm:col-span-2")}>
           <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{row.label}</dt>
-          <dd className="mt-1 break-words text-sm font-semibold text-slate-800">{row.value}</dd>
+          <dd className="mt-1 break-words text-sm font-semibold text-slate-800 dark:text-slate-100">{row.value}</dd>
         </div>
       ))}
     </dl>
@@ -902,11 +951,11 @@ function FieldGrid({ rows }) {
 
 function StatTile({ label, value, tone }) {
   return (
-    <div className="rounded-2xl border border-white bg-white p-3.5 shadow-[0_4px_14px_rgba(80,65,130,0.06)]">
-      <p className="text-[11px] font-medium text-slate-500">{label}</p>
+    <div className="rounded-2xl border border-white bg-white dark:bg-slate-900 p-3.5 shadow-[0_4px_14px_rgba(80,65,130,0.06)]">
+      <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{label}</p>
       <p className={cn(
         "mt-1 break-words text-lg font-bold tabular-nums",
-        tone === "danger" ? "text-rose-600" : tone === "good" ? "text-emerald-700" : "text-[#171a36]"
+        tone === "danger" ? "text-rose-600" : tone === "good" ? "text-emerald-700" : "text-[#171a36] dark:text-slate-100"
       )}>{value}</p>
     </div>
   )
@@ -916,18 +965,18 @@ function RelatedRow({ to, onNavigate, title, subtitle, amount, note }) {
   const body = (
     <>
       <span className="min-w-0">
-        <span className="block truncate text-xs font-bold text-slate-800">{title}</span>
+        <span className="block truncate text-xs font-bold text-slate-800 dark:text-slate-100">{title}</span>
         {subtitle && <span className="mt-0.5 block truncate text-[11px] text-slate-400">{subtitle}</span>}
       </span>
       <span className="shrink-0 text-right">
-        <span className="block text-xs font-bold tabular-nums text-slate-800">{amount}</span>
+        <span className="block text-xs font-bold tabular-nums text-slate-800 dark:text-slate-100">{amount}</span>
         {note && <span className="mt-0.5 block text-[11px] text-slate-400">{note}</span>}
       </span>
     </>
   )
-  const cls = "flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-white p-3 transition"
+  const cls = "flex items-center justify-between gap-3 rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 transition"
   return to ? (
-    <Link to={to} onClick={onNavigate} className={cn(cls, "hover:border-violet-200 hover:bg-violet-50/50")}>{body}</Link>
+    <Link to={to} onClick={onNavigate} className={cn(cls, "hover:border-violet-200 dark:border-slate-700 hover:bg-violet-50/50")}>{body}</Link>
   ) : (
     <div className={cls}>{body}</div>
   )
@@ -946,7 +995,7 @@ function RecordDialog({ record, records, shopId, onClose, onOpen, onEdit, onDele
   const hasCustomer = Boolean(customerId)
   const [live, setLive] = useState({
     customer: isCustomer ? record.data : (record.customer || null),
-    bills: [], payments: [], advances: [],
+    bills: [], payments: [], advances: [], allocations: [],
   })
   const [loading, setLoading] = useState(hasCustomer)
   const [loadError, setLoadError] = useState("")
@@ -965,6 +1014,7 @@ function RecordDialog({ record, records, shopId, onClose, onOpen, onEdit, onDele
           supabase.from("bills").select("*").eq("shop_id", shopId).eq("customer_id", customerId).order("created_at", { ascending: false }),
           supabase.from("payments").select("*").eq("shop_id", shopId).eq("customer_id", customerId).order("payment_date", { ascending: false }),
           supabase.from("customer_advances").select("*").eq("shop_id", shopId).eq("customer_id", customerId).order("created_at", { ascending: false }),
+          supabase.from("advance_allocations").select("*, customer_advances!inner(customer_id, shop_id), bills(bill_number)").eq("customer_advances.shop_id", shopId).eq("customer_advances.customer_id", customerId).order("created_at", { ascending: false }),
         ] : []
         const [customerRes, ...related] = await Promise.all([customerPromise, ...relatedPromises])
         if (customerRes.error) throw customerRes.error
@@ -976,6 +1026,7 @@ function RecordDialog({ record, records, shopId, onClose, onOpen, onEdit, onDele
           bills: related[0]?.data || [],
           payments: related[1]?.data || [],
           advances: related[2]?.data || [],
+          allocations: related[3]?.data || [],
         })
       } catch (error) {
         if (active) setLoadError(error?.message || "Could not fetch the linked customer profile.")
@@ -1053,7 +1104,7 @@ function RecordDialog({ record, records, shopId, onClose, onOpen, onEdit, onDele
         meta={
           <>
             <StatusPill status={view.status} />
-            {view.date && <span className="text-xs text-slate-500">{formatDate(view.date)}</span>}
+            {view.date && <span className="text-xs text-slate-500 dark:text-slate-400">{formatDate(view.date)}</span>}
             {isCustomer && live.customer?.customer_type && (
               <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-bold text-violet-700">{live.customer.customer_type}</span>
             )}
@@ -1063,7 +1114,7 @@ function RecordDialog({ record, records, shopId, onClose, onOpen, onEdit, onDele
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
         {loading && (
-          <div className="flex items-center gap-2 rounded-2xl border border-violet-100 bg-white p-3 text-sm text-slate-500">
+          <div className="flex items-center gap-2 rounded-2xl border border-violet-100 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm text-slate-500 dark:text-slate-400">
             <Loader2 className="h-4 w-4 animate-spin text-violet-600" aria-hidden="true" />Fetching latest customer profile…
           </div>
         )}
@@ -1071,11 +1122,11 @@ function RecordDialog({ record, records, shopId, onClose, onOpen, onEdit, onDele
 
         {!isCustomer && view.customer && (
           <DialogSection icon={UserRound} title="Linked customer profile">
-            <div className="mb-4 flex items-center gap-3 rounded-2xl border border-violet-100 bg-[#faf9ff] p-3">
+            <div className="mb-4 flex items-center gap-3 rounded-2xl border border-violet-100 dark:border-slate-700 bg-[#faf9ff] dark:bg-slate-800 p-3">
               <RecordAvatar record={view} className="h-14 w-14 text-base" />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold text-[#171a36]">{view.customer.name || "Customer"}</p>
-                <p className="mt-0.5 text-xs text-slate-500">{[view.customer.mobile, view.customer.city, view.customer.customer_type].filter(Boolean).join(" · ") || "Customer details"}</p>
+                <p className="truncate text-sm font-bold text-[#171a36] dark:text-slate-100">{view.customer.name || "Customer"}</p>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{[view.customer.mobile, view.customer.city, view.customer.customer_type].filter(Boolean).join(" · ") || "Customer details"}</p>
               </div>
               {showLinkedCustomerDue && (
                 <div className="shrink-0 text-right">
@@ -1114,11 +1165,11 @@ function RecordDialog({ record, records, shopId, onClose, onOpen, onEdit, onDele
         {/* Personal Khata profile: sourced only from khata_entries */}
         {record.type === "khata" && (
           <DialogSection icon={UserRound} title="Khata person profile">
-            <div className="mb-3 flex items-center gap-3 rounded-2xl border border-violet-100 bg-violet-50/70 p-3">
+            <div className="mb-3 flex items-center gap-3 rounded-2xl border border-violet-100 dark:border-slate-700 bg-violet-50/70 p-3">
               <RecordAvatar record={record} className="h-14 w-14 border-2 border-white text-base shadow-sm" />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold text-[#171a36]">{record.data.customer_name || "Khata person"}</p>
-                <p className="mt-0.5 text-xs text-slate-500">{record.data.mobile || "Mobile not provided"}</p>
+                <p className="truncate text-sm font-bold text-[#171a36] dark:text-slate-100">{record.data.customer_name || "Khata person"}</p>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{record.data.mobile || "Mobile not provided"}</p>
               </div>
               <div className="shrink-0 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-right">
                 <p className="text-[10px] font-bold uppercase tracking-wide text-rose-600">Khata outstanding</p>
@@ -1142,10 +1193,10 @@ function RecordDialog({ record, records, shopId, onClose, onOpen, onEdit, onDele
           <>
             <DialogSection icon={Package} title="Items on this bill" count={related.items.length}>
               {related.items.length ? (
-                <div className="overflow-x-auto rounded-xl border border-slate-100">
+                <div className="overflow-x-auto rounded-xl border border-slate-100 dark:border-slate-700">
                   <table className="w-full min-w-[440px] text-left">
                     <thead>
-                      <tr className="bg-[#f5f3fc] text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                      <tr className="bg-[#f5f3fc] dark:bg-slate-800 text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                         <th className="px-3 py-2">Item</th>
                         <th className="px-3 py-2">Qty</th>
                         <th className="px-3 py-2 text-right">Rate</th>
@@ -1155,12 +1206,12 @@ function RecordDialog({ record, records, shopId, onClose, onOpen, onEdit, onDele
                     </thead>
                     <tbody>
                       {related.items.map((item) => (
-                        <tr key={item.key} className="border-t border-slate-100">
-                          <td className="px-3 py-2.5 text-xs font-bold text-slate-800">{item.title}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-xs text-slate-600">{num(item.data.quantity)} {item.data.unit || ""}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-right text-xs tabular-nums text-slate-600">{formatCurrency(item.data.rate)}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-right text-xs tabular-nums text-slate-600">{num(item.data.gst_percent)}%</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-right text-xs font-bold tabular-nums text-slate-800">{formatCurrency(item.data.total_amount)}</td>
+                        <tr key={item.key} className="border-t border-slate-100 dark:border-slate-700">
+                          <td className="px-3 py-2.5 text-xs font-bold text-slate-800 dark:text-slate-100">{item.title}</td>
+                          <td className="whitespace-nowrap px-3 py-2.5 text-xs text-slate-600 dark:text-slate-300">{num(item.data.quantity)} {item.data.unit || ""}</td>
+                          <td className="whitespace-nowrap px-3 py-2.5 text-right text-xs tabular-nums text-slate-600 dark:text-slate-300">{formatCurrency(item.data.rate)}</td>
+                          <td className="whitespace-nowrap px-3 py-2.5 text-right text-xs tabular-nums text-slate-600 dark:text-slate-300">{num(item.data.gst_percent)}%</td>
+                          <td className="whitespace-nowrap px-3 py-2.5 text-right text-xs font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatCurrency(item.data.total_amount)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1238,6 +1289,21 @@ function RecordDialog({ record, records, shopId, onClose, onOpen, onEdit, onDele
                 </div>
               ) : <p className="text-xs text-slate-400">No advances found for this customer.</p>}
             </DialogSection>
+            <DialogSection icon={History} title="Advance adjustment history" count={live.allocations.length}>
+              {live.allocations.length ? (
+                <div className="space-y-2">
+                  {live.allocations.map((allocation) => (
+                    <RelatedRow
+                      key={allocation.id}
+                      title={`Adjusted against ${allocation.bills?.bill_number || "bill"}`}
+                      subtitle={formatDate(allocation.created_at)}
+                      amount={formatCurrency(allocation.amount)}
+                      note="Advance used"
+                    />
+                  ))}
+                </div>
+              ) : <p className="text-xs text-slate-400">No advance adjustments found for this customer.</p>}
+            </DialogSection>
           </>
         )}
 
@@ -1260,14 +1326,14 @@ function RecordDialog({ record, records, shopId, onClose, onOpen, onEdit, onDele
         )}
 
         {!canDelete && record.type !== "page" && (
-          <p className="px-1 text-xs leading-5 text-slate-500">
+          <p className="px-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
             This record type can’t be deleted from here. Open it to manage it, so your payment and ledger history stays correct.
           </p>
         )}
       </div>
 
       {/* Footer: every button uses the same style */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-[#eae7f4] bg-white p-3 sm:p-4">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-[#eae7f4] bg-white dark:bg-slate-900 p-3 sm:p-4">
         <AppButton onClick={onOpen}>
           <ExternalLink className="h-4 w-4" aria-hidden="true" />
           {record.type === "page" ? "Open page" : isCustomer ? "Full customer page" : "Open full page"}
@@ -1359,7 +1425,7 @@ function EditCustomerDialog({ record, onClose, onSave }) {
 
   const input = (key, label, options = {}) => (
     <label className={cn("block", options.wide && "sm:col-span-2")}>
-      <span className="mb-1.5 block text-xs font-semibold text-slate-600">{label}</span>
+      <span className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">{label}</span>
       <input
         value={form[key]}
         onChange={(event) => update(key, options.upper ? event.target.value.toUpperCase() : options.digits ? event.target.value.replace(/\D/g, "") : event.target.value)}
@@ -1371,7 +1437,7 @@ function EditCustomerDialog({ record, onClose, onSave }) {
 
   const formSection = (icon, title, hint, body) => (
     <DialogSection icon={icon} title={title}>
-      {hint && <p className="-mt-1 mb-3 text-xs text-slate-500">{hint}</p>}
+      {hint && <p className="-mt-1 mb-3 text-xs text-slate-500 dark:text-slate-400">{hint}</p>}
       {body}
     </DialogSection>
   )
@@ -1386,7 +1452,7 @@ function EditCustomerDialog({ record, onClose, onSave }) {
             title="Edit customer"
             onClose={requestClose}
             disabled={saving}
-            meta={<span className="text-xs text-slate-500">Update the details of {row.name || "this customer"}.</span>}
+            meta={<span className="text-xs text-slate-500 dark:text-slate-400">Update the details of {row.name || "this customer"}.</span>}
           />
 
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
@@ -1396,7 +1462,7 @@ function EditCustomerDialog({ record, onClose, onSave }) {
                   {form.photo_preview ? <img src={form.photo_preview} alt="Customer profile preview" className="h-full w-full object-cover" /> : getInitials(form.name)}
                 </div>
                 <div className="min-w-0 flex-1 text-center sm:text-left">
-                  <p className="text-xs text-slate-500">JPG, PNG or WebP, up to 2 MB.</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">JPG, PNG or WebP, up to 2 MB.</p>
                   <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
                     <AppButton onClick={() => photoInput.current?.click()}><Camera className="h-4 w-4" aria-hidden="true" />{form.photo_preview ? "Change photo" : "Upload photo"}</AppButton>
                     {form.photo_preview && <AppButton onClick={() => { update("photo_preview", ""); update("photo", null) }}><X className="h-4 w-4 text-rose-600" aria-hidden="true" />Remove</AppButton>}
@@ -1412,7 +1478,7 @@ function EditCustomerDialog({ record, onClose, onSave }) {
                 {input("mobile", "Mobile number", { props: { type: "tel", inputMode: "numeric", placeholder: "10-digit number", maxLength: 15 } })}
                 {input("whatsapp", "WhatsApp number", { props: { type: "tel", inputMode: "numeric", placeholder: "10-digit number", maxLength: 15 } })}
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-semibold text-slate-600">Customer type</span>
+                  <span className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">Customer type</span>
                   <select value={form.customer_type} onChange={(e) => update("customer_type", e.target.value)} className={INPUT}>
                     {CUSTOMER_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
                   </select>
@@ -1432,7 +1498,7 @@ function EditCustomerDialog({ record, onClose, onSave }) {
 
             {formSection(Wallet, "Opening balance", "Amount the customer already owed before using this app.", (
               <label className="block">
-                <span className="mb-1.5 block text-xs font-semibold text-slate-600">Opening balance</span>
+                <span className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">Opening balance</span>
                 <div className="relative">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-400">₹</span>
                   <input type="number" min="0" step="0.01" inputMode="decimal" value={form.opening_balance} onChange={(e) => update("opening_balance", e.target.value)} placeholder="0.00" className={cn(INPUT, "pl-8 font-semibold")} />
@@ -1450,8 +1516,8 @@ function EditCustomerDialog({ record, onClose, onSave }) {
             {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
           </div>
 
-          <div className="flex shrink-0 flex-col gap-3 border-t border-[#eae7f4] bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs text-slate-500">{dirty ? "You have unsaved changes." : "No changes yet."}</p>
+          <div className="flex shrink-0 flex-col gap-3 border-t border-[#eae7f4] bg-white dark:bg-slate-900 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-slate-500 dark:text-slate-400">{dirty ? "You have unsaved changes." : "No changes yet."}</p>
             <div className="flex w-full gap-2 sm:w-auto">
               <AppButton onClick={requestClose} disabled={saving} className="flex-1 sm:flex-none">Cancel</AppButton>
               <AppButton type="submit" disabled={saving || !dirty} className="flex-1 sm:flex-none">
@@ -1464,10 +1530,10 @@ function EditCustomerDialog({ record, onClose, onSave }) {
 
       {discardOpen && (
         <Modal label="Discard changes" onClose={() => setDiscardOpen(false)} layer={130} size="max-w-sm">
-          <div className="bg-white p-6">
+          <div className="bg-white dark:bg-slate-900 p-6">
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-600"><AlertTriangle className="h-5 w-5" aria-hidden="true" /></span>
-            <h2 className="mt-4 text-lg font-bold tracking-tight text-[#171a36]">Discard your changes?</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">You have unsaved changes. If you close now, they will be lost.</p>
+            <h2 className="mt-4 text-lg font-bold tracking-tight text-[#171a36] dark:text-slate-100">Discard your changes?</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">You have unsaved changes. If you close now, they will be lost.</p>
             <div className="mt-6 flex justify-end gap-2">
               <AppButton onClick={() => setDiscardOpen(false)}>Keep editing</AppButton>
               <AppButton onClick={onClose}><Trash2 className="h-4 w-4 text-rose-600" aria-hidden="true" />Discard changes</AppButton>
@@ -1505,11 +1571,11 @@ function DeleteDialog({ record, impact, onClose, onConfirm }) {
 
   return (
     <Modal label={`Delete ${meta.label.toLowerCase()}`} onClose={onClose} locked={deleting} layer={120} size="max-w-md">
-      <div className="bg-white p-6">
+      <div className="bg-white dark:bg-slate-900 p-6">
         <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-600"><Trash2 className="h-5 w-5" aria-hidden="true" /></span>
-        <h2 className="mt-4 text-lg font-bold tracking-tight text-[#171a36]">Delete {meta.label.toLowerCase()}?</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          <strong className="text-[#171a36]">{record.title}</strong> will be deleted permanently. This can’t be undone.
+        <h2 className="mt-4 text-lg font-bold tracking-tight text-[#171a36] dark:text-slate-100">Delete {meta.label.toLowerCase()}?</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+          <strong className="text-[#171a36] dark:text-slate-100">{record.title}</strong> will be deleted permanently. This can’t be undone.
         </p>
 
         {impactList.length > 0 && (
@@ -1517,7 +1583,7 @@ function DeleteDialog({ record, impact, onClose, onConfirm }) {
             <p className="text-xs font-semibold text-rose-700">These linked records will also be removed</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {impactList.map(([key, count]) => (
-                <span key={key} className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-rose-700 shadow-sm">{count} {key}</span>
+                <span key={key} className="rounded-full bg-white dark:bg-slate-900 px-2.5 py-1 text-xs font-bold text-rose-700 shadow-sm">{count} {key}</span>
               ))}
             </div>
           </div>
@@ -1525,7 +1591,7 @@ function DeleteDialog({ record, impact, onClose, onConfirm }) {
 
         {risky && (
           <label className="mt-4 block">
-            <span className="mb-1 block text-xs font-medium text-slate-600">Type DELETE to confirm</span>
+            <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Type DELETE to confirm</span>
             <input value={typed} onChange={(event) => setTyped(event.target.value)} autoFocus className={FIELD} />
           </label>
         )}
@@ -1594,6 +1660,7 @@ export default function CommandCenter() {
       ["bill items", () => supabase.from("bill_items").select("*, bills!inner(shop_id)").eq("bills.shop_id", shopId).order("id")],
       ["payments", () => supabase.from("payments").select("*").eq("shop_id", shopId).order("id")],
       ["advances", () => supabase.from("customer_advances").select("*").eq("shop_id", shopId).order("id")],
+      ["advance allocations", () => supabase.from("advance_allocations").select("*, customer_advances!inner(shop_id)").eq("customer_advances.shop_id", shopId).order("created_at")],
       ["khata entries", () => supabase.from("khata_entries").select("*").eq("shop_id", shopId).order("id")],
       ["attachments", () => supabase.from("bill_attachments").select("*").eq("shop_id", shopId).order("id")],
     ]
@@ -1608,9 +1675,10 @@ export default function CommandCenter() {
       return []
     })
 
-    const [customers, bills, items, payments, advances, khata, attachments] = rows
+    const [customers, bills, items, payments, advances, allocations, khata, attachments] = rows
     const cleanItems = items.map(({ bills: _bills, ...item }) => item)
-    setRecords(buildRecords({ customers, bills, items: cleanItems, payments, advances, khata, attachments }))
+    const cleanAllocations = allocations.map(({ customer_advances: _advanceJoin, ...allocation }) => allocation)
+    setRecords(buildRecords({ customers, bills, items: cleanItems, payments, advances, allocations: cleanAllocations, khata, attachments }))
     setLoadWarning(failed.length ? `Could not load: ${failed.join(", ")}.` : "")
     if (failed.length === tables.length) toast.error("Could not load records", { description: "Check your connection and try again." })
 
@@ -1923,8 +1991,8 @@ export default function CommandCenter() {
   if (!currentShop) {
     return (
       <div className={cn(CARD, "mx-auto mt-10 max-w-md p-8 text-center")}>
-        <h1 className="text-lg font-bold text-[#171a39]">Select a shop first</h1>
-        <p className="mt-1 text-sm text-slate-600">The Command Center searches the records of your active shop.</p>
+        <h1 className="text-lg font-bold text-[#171a39] dark:text-slate-100">Select a shop first</h1>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">The Command Center searches the records of your active shop.</p>
         <AppButton asChild className="mt-5"><Link to="/settings">Open shop settings</Link></AppButton>
       </div>
     )
@@ -1943,13 +2011,13 @@ export default function CommandCenter() {
       {/* HEADER */}
       <header className="flex min-w-0 flex-col justify-between gap-4 xl:flex-row xl:items-center">
         <div className="min-w-0">
-          <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-xs font-medium text-slate-500">
+          <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
             <span className="truncate">{currentShop.name || "Workspace"}</span>
             <ChevronRight className="h-3 w-3 shrink-0" aria-hidden="true" />
             <span>Command Center</span>
           </nav>
-          <h1 className="mt-1 truncate text-[26px] font-bold tracking-tight text-[#171a39] sm:text-[32px]">Command Center</h1>
-          <p className="mt-0.5 text-sm text-slate-600">
+          <h1 className="mt-1 truncate text-[26px] font-bold tracking-tight text-[#171a39] dark:text-slate-100 sm:text-[32px]">Command Center</h1>
+          <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-300">
             Find any customer, bill, item, payment, khata entry or page in one search.
           </p>
         </div>
@@ -1990,7 +2058,7 @@ export default function CommandCenter() {
       <div className="grid grid-cols-1 items-start gap-5">
         <Card className={cn(CARD, "min-w-0")}>
           {/* Search + filters */}
-          <div className="border-b border-violet-100 p-4 sm:p-5">
+          <div className="border-b border-violet-100 dark:border-slate-700 p-4 sm:p-5">
             <div className="relative">
               <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" aria-hidden="true" />
               <input
@@ -2000,7 +2068,7 @@ export default function CommandCenter() {
                 onKeyDown={onSearchKeyDown}
                 placeholder="Search name, mobile, bill no., item, reference, amount, city, notes…"
                 aria-label="Search all records"
-                className="h-14 w-full rounded-2xl border border-violet-200 bg-white pl-12 pr-28 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-violet-400 focus:ring-4 focus:ring-violet-500/10"
+                className="h-14 w-full rounded-2xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-12 pr-28 text-sm text-slate-800 dark:text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-violet-400 focus:ring-4 focus:ring-violet-500/10"
               />
               <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
                 {query && (
@@ -2008,7 +2076,7 @@ export default function CommandCenter() {
                     <X className="h-4 w-4" aria-hidden="true" />
                   </button>
                 )}
-                <kbd className="hidden items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-500 shadow-sm sm:inline-flex">
+                <kbd className="hidden items-center gap-1 rounded-lg border border-slate-200 bg-white dark:bg-slate-900 px-2 py-1 text-[10px] font-semibold text-slate-500 dark:text-slate-400 shadow-sm sm:inline-flex">
                   <Command className="h-3 w-3" aria-hidden="true" />K
                 </kbd>
               </div>
@@ -2029,11 +2097,11 @@ export default function CommandCenter() {
                       onClick={() => setType(key)}
                       className={cn(
                         "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500",
-                        active ? "border-violet-300 bg-violet-100 text-violet-900" : "border-violet-200 bg-white text-slate-600 hover:bg-violet-50"
+                        active ? "border-violet-300 bg-violet-100 text-violet-900" : "border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-violet-50"
                       )}
                     >
                       {key === "all" ? "All records" : TYPE_META[key].plural}
-                      <span className={cn("rounded-full px-1.5 text-[10px] tabular-nums", active ? "bg-white text-violet-700" : "bg-slate-100 text-slate-500")}>{loading ? "–" : count}</span>
+                      <span className={cn("rounded-full px-1.5 text-[10px] tabular-nums", active ? "bg-white dark:bg-slate-900 text-violet-700" : "bg-slate-100 text-slate-500 dark:text-slate-400")}>{loading ? "–" : count}</span>
                     </button>
                   )
                 })}
@@ -2045,25 +2113,25 @@ export default function CommandCenter() {
             </div>
 
             {showFilters && (
-              <div className="mt-4 space-y-3 rounded-2xl border border-violet-100 bg-[#faf9ff] p-3 sm:p-4">
+              <div className="mt-4 space-y-3 rounded-2xl border border-violet-100 dark:border-slate-700 bg-[#faf9ff] dark:bg-slate-800 p-3 sm:p-4">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <label className="block">
-                    <span className="mb-1 block text-[11px] font-medium text-slate-500">Status</span>
+                    <span className="mb-1 block text-[11px] font-medium text-slate-500 dark:text-slate-400">Status</span>
                     <select value={status} onChange={(event) => setStatus(event.target.value)} className={FIELD}>
                       <option value="all">All statuses</option>
                       {statusOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                     </select>
                   </label>
                   <label className="block">
-                    <span className="mb-1 block text-[11px] font-medium text-slate-500">From date</span>
+                    <span className="mb-1 block text-[11px] font-medium text-slate-500 dark:text-slate-400">From date</span>
                     <input type="date" value={fromDate} max={toDate || undefined} onChange={(event) => setFromDate(event.target.value)} className={FIELD} />
                   </label>
                   <label className="block">
-                    <span className="mb-1 block text-[11px] font-medium text-slate-500">To date</span>
+                    <span className="mb-1 block text-[11px] font-medium text-slate-500 dark:text-slate-400">To date</span>
                     <input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => setToDate(event.target.value)} className={FIELD} />
                   </label>
                   <label className="block">
-                    <span className="mb-1 block text-[11px] font-medium text-slate-500">Sort by</span>
+                    <span className="mb-1 block text-[11px] font-medium text-slate-500 dark:text-slate-400">Sort by</span>
                     <select value={sort} onChange={(event) => setSort(event.target.value)} className={FIELD}>
                       <option value="auto">Best match, then newest</option>
                       <option value="newest">Newest first</option>
@@ -2074,11 +2142,11 @@ export default function CommandCenter() {
                     </select>
                   </label>
                   <label className="block">
-                    <span className="mb-1 block text-[11px] font-medium text-slate-500">Min amount (₹)</span>
+                    <span className="mb-1 block text-[11px] font-medium text-slate-500 dark:text-slate-400">Min amount (₹)</span>
                     <input type="number" min="0" inputMode="decimal" value={minAmount} onChange={(event) => setMinAmount(event.target.value)} className={FIELD} />
                   </label>
                   <label className="block">
-                    <span className="mb-1 block text-[11px] font-medium text-slate-500">Max amount (₹)</span>
+                    <span className="mb-1 block text-[11px] font-medium text-slate-500 dark:text-slate-400">Max amount (₹)</span>
                     <input type="number" min="0" inputMode="decimal" value={maxAmount} onChange={(event) => setMaxAmount(event.target.value)} className={FIELD} />
                   </label>
                   <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end lg:col-span-2">
@@ -2107,11 +2175,11 @@ export default function CommandCenter() {
 
           {/* Result summary */}
           <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-5">
-            <p className="text-sm font-semibold text-slate-800" aria-live="polite">
+            <p className="text-sm font-semibold text-slate-800 dark:text-slate-100" aria-live="polite">
               {loading ? "Loading records…" : (
                 <>
                   {filtered.length.toLocaleString("en-IN")} {filtered.length === 1 ? "result" : "results"}
-                  {totals.amount > 0 && <span className="ml-2 text-xs font-medium text-slate-500">Total {formatCurrency(totals.amount)}</span>}
+                  {totals.amount > 0 && <span className="ml-2 text-xs font-medium text-slate-500 dark:text-slate-400">Total {formatCurrency(totals.amount)}</span>}
                   {totals.due > 0 && <span className="ml-2 text-xs font-semibold text-rose-600">Due {formatCurrency(totals.due)}</span>}
                 </>
               )}
@@ -2131,8 +2199,8 @@ export default function CommandCenter() {
           ) : visible.length === 0 ? (
             <div className="flex min-h-64 flex-col items-center justify-center px-5 py-10 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-50 text-violet-600"><SearchX className="h-7 w-7" aria-hidden="true" /></div>
-              <h3 className="mt-4 text-base font-bold text-[#171a39]">{records.length ? "Nothing matches your search" : "No records yet"}</h3>
-              <p className="mt-1 max-w-sm text-sm text-slate-600">
+              <h3 className="mt-4 text-base font-bold text-[#171a39] dark:text-slate-100">{records.length ? "Nothing matches your search" : "No records yet"}</h3>
+              <p className="mt-1 max-w-sm text-sm text-slate-600 dark:text-slate-300">
                 {records.length ? "Check the spelling, try a mobile number or bill number, or loosen your filters." : "Create a bill or add a customer and it will show up here."}
               </p>
               <div className="mt-4 flex flex-wrap justify-center gap-2">
@@ -2146,7 +2214,7 @@ export default function CommandCenter() {
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full min-w-[760px] border-collapse text-left">
                   <thead>
-                    <tr className="border-y border-violet-100 bg-[#faf9ff] text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    <tr className="border-y border-violet-100 dark:border-slate-700 bg-[#faf9ff] dark:bg-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       <th scope="col" className="px-5 py-3">Record</th>
                       <th scope="col" className="px-4 py-3">Type</th>
                       <th scope="col" className="px-4 py-3">Date</th>
@@ -2161,19 +2229,19 @@ export default function CommandCenter() {
                         key={record.key}
                         id={`cc-${record.key}`}
                         onClick={() => openRecord(record)}
-                        className={cn("cursor-pointer border-b border-slate-100 transition-colors hover:bg-[#faf9ff]", index === activeIndex && "bg-[#faf9ff] shadow-[inset_3px_0_0_#7c3aed]")}
+                        className={cn("cursor-pointer border-b border-slate-100 dark:border-slate-700 transition-colors hover:bg-[#faf9ff] dark:bg-slate-800", index === activeIndex && "bg-[#faf9ff] dark:bg-slate-800 shadow-[inset_3px_0_0_#7c3aed]")}
                       >
                         <td className="max-w-[360px] px-5 py-3">
                           <div className="flex min-w-0 items-center gap-3">
                             <RecordAvatar record={record} />
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-[#171a39]"><Highlight text={record.title} tokens={tokens} /></p>
-                              <p className="mt-0.5 truncate text-xs text-slate-500"><Highlight text={record.subtitle || "No extra details"} tokens={tokens} /></p>
+                              <p className="truncate text-sm font-semibold text-[#171a39] dark:text-slate-100"><Highlight text={record.title} tokens={tokens} /></p>
+                              <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400"><Highlight text={record.subtitle || "No extra details"} tokens={tokens} /></p>
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3"><span className="rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">{TYPE_META[record.type].label}</span></td>
-                        <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">{record.date ? formatDate(record.date) : "—"}</td>
+                        <td className="px-4 py-3"><span className="rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300">{TYPE_META[record.type].label}</span></td>
+                        <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500 dark:text-slate-400">{record.date ? formatDate(record.date) : "—"}</td>
                         <td className="whitespace-nowrap px-4 py-3 text-right"><AmountCell record={record} /></td>
                         <td className="px-4 py-3"><StatusPill status={record.status} /></td>
                         <td className="px-5 py-3">
@@ -2194,17 +2262,17 @@ export default function CommandCenter() {
               {/* Mobile cards */}
               <div className="space-y-2 p-3 md:hidden">
                 {visible.map((record) => (
-                  <article key={record.key} className="rounded-2xl border border-violet-100 bg-white p-3">
+                  <article key={record.key} className="rounded-2xl border border-violet-100 dark:border-slate-700 bg-white dark:bg-slate-900 p-3">
                     <button type="button" onClick={() => openRecord(record)} className="flex w-full items-start gap-3 text-left">
                       <RecordAvatar record={record} />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-start justify-between gap-2">
-                          <span className="truncate text-sm font-semibold text-[#171a39]"><Highlight text={record.title} tokens={tokens} /></span>
-                          {record.type !== "page" && <span className="shrink-0 text-sm font-bold tabular-nums text-[#151934]">{formatCurrency(record.amount)}</span>}
+                          <span className="truncate text-sm font-semibold text-[#171a39] dark:text-slate-100"><Highlight text={record.title} tokens={tokens} /></span>
+                          {record.type !== "page" && <span className="shrink-0 text-sm font-bold tabular-nums text-[#151934] dark:text-slate-100">{formatCurrency(record.amount)}</span>}
                         </span>
-                        <span className="mt-0.5 line-clamp-2 block text-xs text-slate-500">{record.subtitle}</span>
+                        <span className="mt-0.5 line-clamp-2 block text-xs text-slate-500 dark:text-slate-400">{record.subtitle}</span>
                         <span className="mt-2 flex flex-wrap items-center gap-2">
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">{TYPE_META[record.type].label}</span>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:text-slate-300">{TYPE_META[record.type].label}</span>
                           <StatusPill status={record.status} />
                           {record.date && <span className="text-[11px] text-slate-400">{formatDate(record.date)}</span>}
                           {record.type !== "invoice" && record.due > 0 && <span className="text-[11px] font-semibold text-rose-600">Record due {formatCurrency(record.due)}</span>}
@@ -2212,7 +2280,7 @@ export default function CommandCenter() {
                         </span>
                       </span>
                     </button>
-                    <div className="mt-3 flex justify-end gap-2 border-t border-slate-100 pt-2">
+                    <div className="mt-3 flex justify-end gap-2 border-t border-slate-100 dark:border-slate-700 pt-2">
                       <AppButton onClick={() => setPreview(record)}><Eye className="h-4 w-4" aria-hidden="true" />View</AppButton>
                       <AppButton onClick={() => openRecord(record)}><ExternalLink className="h-4 w-4" aria-hidden="true" />Open</AppButton>
                       {["customer", "invoice", "khata"].includes(record.type) && (
@@ -2224,8 +2292,8 @@ export default function CommandCenter() {
               </div>
 
               {/* Pagination */}
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-violet-100 px-4 py-3 sm:px-5">
-                <span className="text-xs text-slate-500">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-violet-100 dark:border-slate-700 px-4 py-3 sm:px-5">
+                <span className="text-xs text-slate-500 dark:text-slate-400">
                   Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length.toLocaleString("en-IN")} · Page {page} of {pageCount}
                 </span>
                 <div className="flex items-center gap-2">

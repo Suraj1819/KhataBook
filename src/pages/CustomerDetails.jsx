@@ -2,15 +2,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { useShop } from "@/contexts/ShopContext"
 import { supabase } from "@/lib/supabase"
-import { formatCurrency, formatDate } from "@/lib/utils"
+import { formatCurrency, formatDate, CUSTOMER_TYPES } from "@/lib/utils"
 import { generateCustomerDetailsPDF } from "@/lib/customerDetailsPdf"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 import {
   AlertCircle,
+  AlertTriangle,
+  Camera,
+  Pencil,
+  Plus,
+  Loader2,
   ArrowDownLeft,
   ArrowLeft,
   ArrowUpRight,
@@ -21,7 +30,9 @@ import {
   ChevronRight,
   CircleAlert,
   FileDown,
-  FileSpreadsheet,
+  Download,
+  Filter,
+  X,
   Clock3,
   CreditCard,
   FileText,
@@ -32,7 +43,6 @@ import {
   MessageCircle,
   Paperclip,
   Phone,
-  Plus,
   Receipt,
   RefreshCw,
   Search,
@@ -48,6 +58,33 @@ import { toast } from "sonner"
 ================================================== */
 
 const num = (value) => Number(value) || 0
+const FETCH_BATCH = 1000
+
+// Supabase returns at most 1,000 rows by default. Page through every matching
+// record so customer history and totals never silently stop at the first batch.
+async function fetchAllRows(buildQuery) {
+  const rows = []
+  let from = 0
+
+  while (true) {
+    const { data, error } = await buildQuery().range(from, from + FETCH_BATCH - 1)
+    if (error) throw error
+
+    const batch = data || []
+    rows.push(...batch)
+    if (batch.length < FETCH_BATCH) break
+    from += FETCH_BATCH
+  }
+
+  return rows
+}
+
+function formatDateTime(value) {
+  if (!value) return "—"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return formatDate(String(value).split("T")[0])
+  return `${formatDate(localDateString(date))} · ${date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`
+}
 
 const TABS = [
   { id: "bills", label: "Bills", icon: FileText },
@@ -132,7 +169,7 @@ function Skeleton({ className = "" }) {
 function PageSkeleton() {
   return (
     <div
-      className="min-h-full w-full space-y-4 rounded-2xl bg-[#f7f5ff] px-3 py-5 sm:px-5 lg:px-6"
+      className="min-h-full w-full min-w-0 space-y-4 overflow-x-hidden rounded-2xl bg-[#f7f5ff] px-2.5 py-4 sm:px-5 sm:py-5 lg:px-6"
       aria-busy="true"
       aria-label="Loading customer"
     >
@@ -192,7 +229,7 @@ function SummaryCard({ label, value, detail, icon: Icon, tone = "green", valueCl
 
 function SectionHeader({ icon: Icon, title, description, action }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-[#eae7f4] px-5 py-4">
+    <div className="flex flex-col items-stretch gap-3 border-b border-[#eae7f4] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-50 text-violet-700">
           <Icon className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
@@ -204,7 +241,7 @@ function SectionHeader({ icon: Icon, title, description, action }) {
         </div>
       </div>
 
-      {action}
+      {action && <div className="w-full min-w-0 sm:w-auto sm:shrink-0">{action}</div>}
     </div>
   )
 }
@@ -286,6 +323,653 @@ function KeyValue({ label, value, valueClass = "text-slate-800", strong = false 
   )
 }
 
+
+const MAX_PHOTO_BYTES = 2 * 1024 * 1024
+const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"]
+const GSTIN_PATTERN = /^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/
+const emptyForm = {
+  name: "", mobile: "", whatsapp: "", address: "", city: "", state: "",
+  pincode: "", gstin: "", customer_type: "Individual", opening_balance: "",
+  notes: "", photo: null, photo_preview: "",
+}
+const FORM_TEXT_FIELDS = ["name", "mobile", "whatsapp", "address", "city", "state", "pincode", "gstin", "customer_type", "opening_balance", "notes"]
+const fieldClass = "h-11 rounded-xl border-violet-100 bg-white text-sm shadow-none transition-colors placeholder:text-slate-400 focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/20"
+const outlineBtn = "rounded-xl border-violet-200 bg-white text-slate-700 shadow-sm hover:bg-violet-50"
+
+function normalizeMobile(value) {
+  const digits = String(value || "").replace(/\D/g, "")
+  return digits.length > 10 ? digits.slice(-10) : digits
+}
+
+function getCustomerPhotoStoragePath(photoUrl) {
+  if (!photoUrl) return null
+  try {
+    const url = new URL(photoUrl)
+    const marker = "/storage/v1/object/public/avatars/"
+    const index = url.pathname.indexOf(marker)
+    if (index === -1) return null
+    return decodeURIComponent(url.pathname.slice(index + marker.length))
+  } catch {
+    return null
+  }
+}
+
+async function removeCustomerPhoto(photoUrl) {
+  const path = getCustomerPhotoStoragePath(photoUrl)
+  if (!path) return
+  const { error } = await supabase.storage.from("avatars").remove([path])
+  if (error) throw error
+}
+
+async function uploadCustomerPhoto(shopId, file) {
+  if (!(file instanceof File)) throw new Error("Please select a valid photo.")
+  if (!PHOTO_TYPES.includes(file.type)) throw new Error("Use a JPG, PNG or WebP image.")
+  if (file.size > MAX_PHOTO_BYTES) throw new Error("Photo must be smaller than 2 MB.")
+
+  const ext = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" }[file.type]
+  const unique =
+    typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2)
+  const path = `customers/${shopId}/${Date.now()}-${unique}.${ext}`
+
+  const { data, error } = await supabase.storage.from("avatars").upload(path, file, {
+    cacheControl: "3600",
+    contentType: file.type,
+    upsert: false,
+  })
+  if (error) throw error
+
+  const { data: publicData } = supabase.storage.from("avatars").getPublicUrl(data.path)
+  if (!publicData?.publicUrl) {
+    throw new Error("Photo uploaded, but its public URL could not be created. Check the avatars bucket.")
+  }
+  return publicData.publicUrl
+}
+
+function customerToForm(customer) {
+  return {
+    name: customer.name || "",
+    mobile: customer.mobile || "",
+    whatsapp: customer.whatsapp || "",
+    address: customer.address || "",
+    city: customer.city || "",
+    state: customer.state || "",
+    pincode: customer.pincode || "",
+    gstin: customer.gstin || "",
+    customer_type: customer.customer_type || "Individual",
+    opening_balance: customer.opening_balance != null ? String(customer.opening_balance) : "",
+    notes: customer.notes || "",
+    photo: null,
+    photo_preview: customer.photo_url || "",
+  }
+}
+
+// Returns { errors, payload }. Errors are shown under each field.
+function validateCustomerForm(form) {
+  const errors = {}
+  const name = form.name.trim().replace(/\s+/g, " ")
+
+  if (!name) errors.name = "Customer name is required"
+  else if (name.length < 2) errors.name = "Enter at least 2 characters"
+
+  const mobile = normalizeMobile(form.mobile)
+  if (form.mobile.trim() && mobile.length !== 10) errors.mobile = "Enter a valid 10-digit mobile number"
+
+  const whatsapp = normalizeMobile(form.whatsapp)
+  if (form.whatsapp.trim() && whatsapp.length !== 10) {
+    errors.whatsapp = "Enter a valid 10-digit WhatsApp number"
+  }
+
+  const opening = form.opening_balance.trim() ? Number(form.opening_balance) : 0
+  if (!Number.isFinite(opening) || opening < 0) errors.opening_balance = "Enter an amount of 0 or more"
+
+  const gstin = form.gstin.trim().toUpperCase()
+  if (gstin && !GSTIN_PATTERN.test(gstin)) errors.gstin = "GSTIN should be 15 characters, like 22AAAAA0000A1Z5"
+
+  const pincode = form.pincode.trim()
+  if (pincode && !/^\d{6}$/.test(pincode)) errors.pincode = "PIN code must be 6 digits"
+
+  return {
+    errors,
+    payload: {
+      name,
+      mobile: form.mobile.trim() ? mobile : "",
+      whatsapp: form.whatsapp.trim() ? whatsapp : "",
+      address: form.address.trim(),
+      city: form.city.trim(),
+      state: form.state.trim(),
+      pincode,
+      gstin,
+      customer_type: form.customer_type,
+      opening_balance: opening,
+      notes: form.notes.trim(),
+    },
+  }
+}
+
+/**
+ * One save routine for BOTH the list and the details page, so the profile
+ * photo is uploaded, saved and cleaned up the same way everywhere.
+ */
+async function saveCustomerRecord({ shopId, editing, form, payload }) {
+  const previousPhoto = editing?.photo_url || null
+  let photoUrl = previousPhoto
+  let uploadedUrl = null
+
+  if (form.photo instanceof File) {
+    uploadedUrl = await uploadCustomerPhoto(shopId, form.photo)
+    photoUrl = uploadedUrl
+  } else if (!form.photo_preview) {
+    photoUrl = null // photo was removed
+  }
+
+  const record = { ...payload, photo_url: photoUrl, shop_id: shopId }
+
+  let saved = null
+  try {
+    if (editing) {
+      const { data, error } = await supabase
+        .from("customers")
+        .update(record)
+        .eq("id", editing.id)
+        .eq("shop_id", shopId)
+        .select()
+        .maybeSingle()
+      if (error) throw error
+      saved = data
+    } else {
+      const { data, error } = await supabase.from("customers").insert(record).select().maybeSingle()
+      if (error) throw error
+      saved = data
+    }
+  } catch (error) {
+    // Don't leave an orphan photo behind when the customer wasn't saved
+    if (uploadedUrl) await removeCustomerPhoto(uploadedUrl).catch(() => {})
+    throw error
+  }
+
+  let warning = ""
+  if (previousPhoto && previousPhoto !== photoUrl) {
+    try {
+      await removeCustomerPhoto(previousPhoto)
+    } catch (error) {
+      console.error("Old photo cleanup error:", error)
+      warning = "The previous photo could not be removed from storage."
+    }
+  }
+
+  return { saved: saved || { ...(editing || {}), ...record }, warning }
+}
+
+function useCustomerForm({ shopId, customers = [], onSaved }) {
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [form, setForm] = useState(emptyForm)
+  const [errors, setErrors] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [discardOpen, setDiscardOpen] = useState(false)
+  const initial = useRef(emptyForm)
+
+  const openCreate = () => {
+    initial.current = { ...emptyForm }
+    setEditing(null)
+    setForm({ ...emptyForm })
+    setErrors({})
+    setOpen(true)
+  }
+
+  const openEdit = (customer) => {
+    const next = customerToForm(customer)
+    initial.current = next
+    setEditing(customer)
+    setForm(next)
+    setErrors({})
+    setOpen(true)
+  }
+
+  const updateField = (field, value) => {
+    setForm((previous) => ({ ...previous, [field]: value }))
+    setErrors((previous) => (previous[field] ? { ...previous, [field]: undefined } : previous))
+  }
+
+  const dirty = useMemo(
+    () =>
+      form.photo instanceof File ||
+      form.photo_preview !== initial.current.photo_preview ||
+      FORM_TEXT_FIELDS.some((key) => form[key] !== initial.current[key]),
+    [form]
+  )
+
+  const requestClose = () => {
+    if (saving) return
+    if (dirty) setDiscardOpen(true)
+    else setOpen(false)
+  }
+
+  const handlePhotoChange = (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+    if (!file) return
+
+    if (!PHOTO_TYPES.includes(file.type)) return toast.error("Use a JPG, PNG or WebP image")
+    if (file.size > MAX_PHOTO_BYTES) return toast.error("Photo must be smaller than 2 MB")
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setForm((previous) => ({ ...previous, photo: file, photo_preview: reader.result }))
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const removePhoto = () => setForm((previous) => ({ ...previous, photo: null, photo_preview: "" }))
+
+  const duplicate = useMemo(() => {
+    const mobile = normalizeMobile(form.mobile)
+    if (mobile.length !== 10) return null
+    return (
+      customers.find((c) => c.id !== editing?.id && normalizeMobile(c.mobile) === mobile) || null
+    )
+  }, [form.mobile, customers, editing])
+
+  const submit = async (event) => {
+    event.preventDefault()
+    if (saving) return
+
+    const { errors: found, payload } = validateCustomerForm(form)
+    const firstError = Object.keys(found)[0]
+
+    if (firstError) {
+      setErrors(found)
+      toast.error("Please fix the highlighted fields")
+      document.getElementById(`cf-${firstError}`)?.focus()
+      return
+    }
+
+    setSaving(true)
+    try {
+      const { saved, warning } = await saveCustomerRecord({ shopId, editing, form, payload })
+
+      toast.success(editing ? "Customer updated" : "Customer added")
+      if (warning) toast.warning(warning, { duration: 6000 })
+
+      setOpen(false)
+      await onSaved?.(saved, editing)
+    } catch (error) {
+      console.error("Save customer error:", error)
+      toast.error("Could not save customer", { description: error?.message })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return {
+    open,
+    setOpen,
+    editing,
+    form,
+    errors,
+    saving,
+    dirty,
+    duplicate,
+    discardOpen,
+    setDiscardOpen,
+    openCreate,
+    openEdit,
+    updateField,
+    requestClose,
+    handlePhotoChange,
+    removePhoto,
+    submit,
+  }
+}
+
+
+const CONFIRM_TONES = {
+  rose: { box: "bg-rose-100/80 text-rose-600", button: "border-rose-200 bg-white text-rose-700 hover:bg-rose-50" },
+  amber: { box: "bg-amber-100/80 text-amber-600", button: "border-amber-200 bg-white text-amber-800 hover:bg-amber-50" },
+  emerald: { box: "bg-emerald-100/80 text-emerald-700", button: "border-violet-200 bg-white text-slate-700 hover:bg-violet-50" },
+}
+
+function ConfirmDialog({
+  open,
+  onOpenChange,
+  icon: Icon = AlertTriangle,
+  tone = "rose",
+  title,
+  description,
+  confirmLabel,
+  loadingLabel = "Working…",
+  cancelLabel = "Cancel",
+  onConfirm,
+  loading = false,
+  hideConfirm = false,
+  confirmDisabled = false,
+  children,
+}) {
+  const style = CONFIRM_TONES[tone]
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !loading && onOpenChange(next)}>
+      <DialogContent className="max-w-sm gap-0 overflow-hidden rounded-2xl border-0 p-0 shadow-[0_12px_32px_rgba(80,65,130,0.25)] sm:max-w-md">
+        <div className="flex flex-col items-center px-6 py-6 text-center">
+          <div className={`mb-4 flex h-14 w-14 items-center justify-center rounded-full ${style.box}`}>
+            <Icon className="h-7 w-7" aria-hidden="true" />
+          </div>
+
+          <DialogTitle className="text-lg font-bold text-slate-900">{title}</DialogTitle>
+          <DialogDescription className="mt-2 text-sm leading-relaxed text-slate-500">{description}</DialogDescription>
+          {children && <div className="mt-4 w-full text-left">{children}</div>}
+        </div>
+
+        <DialogFooter className="flex flex-col gap-2 border-t border-[#eeecf5] bg-[#faf9ff] p-4 sm:flex-row sm:justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={loading}
+            onClick={() => onOpenChange(false)}
+            className={`h-10 w-full gap-2 px-5 text-sm font-medium sm:w-auto ${outlineBtn}`}
+          >
+            {cancelLabel}
+          </Button>
+
+          {!hideConfirm && (
+            <Button
+              type="button"
+              disabled={loading || confirmDisabled}
+              onClick={onConfirm}
+              className={`h-10 w-full gap-2 rounded-xl border px-5 text-sm font-medium shadow-sm sm:w-auto ${style.button}`}
+            >
+              {loading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+              {loading ? loadingLabel : confirmLabel}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function FormSection({ icon: Icon, title, description, children }) {
+  return (
+    <section className="space-y-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+          <Icon className="h-4 w-4" aria-hidden="true" />
+        </div>
+        <div>
+          <h3 className="text-sm font-bold text-[#171a36]">{title}</h3>
+          {description && <p className="mt-0.5 text-xs text-slate-500">{description}</p>}
+        </div>
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function Field({ id, label, required, hint, error, children }) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id} className="text-[13px] font-medium text-slate-700">
+        {label} {required && <span className="text-rose-500">*</span>}
+      </Label>
+      {children}
+      {error ? (
+        <p id={`${id}-error`} role="alert" className="flex items-center gap-1 text-[11px] font-medium text-rose-600">
+          <AlertCircle className="h-3 w-3 shrink-0" aria-hidden="true" />
+          {error}
+        </p>
+      ) : (
+        hint && <p className="text-[11px] text-slate-500">{hint}</p>
+      )}
+    </div>
+  )
+}
+
+function CustomerFormDialog({ ctl }) {
+  const { open, editing, form, errors, saving, duplicate, updateField } = ctl
+  const photoInput = useRef(null)
+
+  const inputProps = (key, extra = {}) => {
+    const { className: extraClass = "", ...rest } = extra
+    return {
+      id: `cf-${key}`,
+      value: form[key],
+      onChange: (event) => updateField(key, event.target.value),
+      "aria-invalid": Boolean(errors[key]),
+      "aria-describedby": errors[key] ? `cf-${key}-error` : undefined,
+      className: `${fieldClass} ${errors[key] ? "border-rose-300 focus-visible:border-rose-500 focus-visible:ring-rose-500/20" : ""} ${extraClass}`,
+      ...rest,
+    }
+  }
+
+  return (
+    <>
+      <Dialog open={open} onOpenChange={(next) => !next && ctl.requestClose()}>
+        <DialogContent className="max-h-[94vh] gap-0 overflow-hidden rounded-[20px] border-0 p-0 shadow-[0_12px_32px_rgba(80,65,130,0.25)] sm:max-w-[640px]">
+          <div className="border-b border-[#eae7f4] bg-gradient-to-br from-emerald-50 via-[#f7f5ff] to-white px-5 pb-5 pt-6 sm:px-7">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-700 text-white shadow-lg shadow-emerald-700/25">
+                {editing ? <Pencil className="h-5 w-5" aria-hidden="true" /> : <UserRound className="h-5 w-5" aria-hidden="true" />}
+              </div>
+
+              <div className="min-w-0 flex-1 pr-6">
+                <DialogTitle className="text-lg font-bold tracking-tight text-[#171a36]">
+                  {editing ? "Edit customer" : "Add new customer"}
+                </DialogTitle>
+                <DialogDescription className="mt-1 text-sm text-slate-600">
+                  {editing
+                    ? `Update the details of ${editing.name}.`
+                    : "Fields marked with * are required. You can add the rest later."}
+                </DialogDescription>
+              </div>
+            </div>
+          </div>
+
+          <form onSubmit={ctl.submit} noValidate className="flex max-h-[calc(94vh-112px)] flex-col">
+            <div className="flex-1 space-y-6 overflow-y-auto bg-white px-5 py-6 sm:px-7">
+              {/* Photo */}
+              <div className="flex flex-col items-center gap-4 rounded-2xl border border-violet-100 bg-[#faf9ff] p-4 sm:flex-row">
+                <div className="relative shrink-0">
+                  <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-emerald-50 text-xl font-bold text-emerald-800 shadow-sm">
+                    {form.photo_preview ? (
+                      <img src={form.photo_preview} alt="Customer profile preview" className="h-full w-full object-cover" />
+                    ) : (
+                      getInitials(form.name)
+                    )}
+                  </div>
+                  {form.photo instanceof File && (
+                    <span className="absolute -right-1 -top-1 rounded-full border-2 border-white bg-emerald-700 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                      NEW
+                    </span>
+                  )}
+                </div>
+
+                <div className="min-w-0 flex-1 text-center sm:text-left">
+                  <p className="text-sm font-semibold text-slate-800">Profile photo</p>
+                  <p className="mt-1 text-xs text-slate-500">JPG, PNG or WebP, up to 2 MB.</p>
+
+                  <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
+                    <Button type="button" variant="outline" onClick={() => photoInput.current?.click()} className={`h-9 gap-2 text-xs ${outlineBtn}`}>
+                      <Camera className="h-4 w-4" aria-hidden="true" />
+                      {form.photo_preview ? "Change photo" : "Upload photo"}
+                    </Button>
+
+                    {form.photo_preview && (
+                      <Button type="button" variant="outline" onClick={ctl.removePhoto} className="h-9 gap-2 rounded-xl border-rose-200 bg-white text-xs text-rose-700 shadow-sm hover:bg-rose-50">
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                <input ref={photoInput} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={ctl.handlePhotoChange} />
+              </div>
+
+              <FormSection icon={UserRound} title="Basic information" description="Name and contact details.">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <Field id="cf-name" label="Customer name" required error={errors.name}>
+                      <Input {...inputProps("name", { placeholder: "Enter customer name", autoFocus: true })} />
+                    </Field>
+                  </div>
+
+                  <Field id="cf-mobile" label="Mobile number" error={errors.mobile}>
+                    <Input {...inputProps("mobile", { type: "tel", inputMode: "numeric", placeholder: "10-digit number", maxLength: 15 })} />
+                  </Field>
+
+                  <Field id="cf-whatsapp" label="WhatsApp number" error={errors.whatsapp} hint="Used for payment reminders. Mobile is used if empty.">
+                    <Input {...inputProps("whatsapp", { type: "tel", inputMode: "numeric", placeholder: "10-digit number", maxLength: 15 })} />
+                  </Field>
+
+                  {duplicate && (
+                    <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 sm:col-span-2">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      <span>
+                        <strong>{duplicate.name}</strong> already uses this mobile number. You can still save, but check you are not adding the same customer twice.
+                      </span>
+                    </p>
+                  )}
+
+                  <div className="space-y-1.5">
+                    <Label className="text-[13px] font-medium text-slate-700">Customer type</Label>
+                    <Select value={form.customer_type} onValueChange={(value) => updateField("customer_type", value)}>
+                      <SelectTrigger className={fieldClass} aria-label="Customer type">
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CUSTOMER_TYPES.map((type) => (
+                          <SelectItem key={type} value={type}>{type}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <Field id="cf-gstin" label="GSTIN" error={errors.gstin} hint="Optional, for business customers.">
+                    <Input
+                      {...inputProps("gstin", { placeholder: "15-character GSTIN", maxLength: 15, className: "uppercase" })}
+                      onChange={(event) => updateField("gstin", event.target.value.toUpperCase())}
+                    />
+                  </Field>
+                </div>
+              </FormSection>
+
+              <div className="h-px bg-[#eeecf5]" />
+
+              <FormSection icon={MapPin} title="Address" description="Billing or business address.">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <Field id="cf-address" label="Street address">
+                      <Input {...inputProps("address", { placeholder: "House number, street, locality" })} />
+                    </Field>
+                  </div>
+
+                  <Field id="cf-city" label="City">
+                    <Input {...inputProps("city", { placeholder: "City" })} />
+                  </Field>
+
+                  <Field id="cf-state" label="State">
+                    <Input {...inputProps("state", { placeholder: "State" })} />
+                  </Field>
+
+                  <Field id="cf-pincode" label="PIN code" error={errors.pincode}>
+                    <Input
+                      {...inputProps("pincode", { inputMode: "numeric", placeholder: "6-digit PIN code", maxLength: 6 })}
+                      onChange={(event) => updateField("pincode", event.target.value.replace(/\D/g, ""))}
+                    />
+                  </Field>
+                </div>
+              </FormSection>
+
+              <div className="h-px bg-[#eeecf5]" />
+
+              <FormSection icon={Wallet} title="Opening balance" description="Amount the customer already owed before you started using this app.">
+                <Field id="cf-opening_balance" label="Opening balance" error={errors.opening_balance} hint="Kept separate from bills created in this app.">
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-400">₹</span>
+                    <Input
+                      {...inputProps("opening_balance", { type: "number", inputMode: "decimal", min: "0", step: "0.01", placeholder: "0.00" })}
+                      className={`${fieldClass} pl-8 font-semibold ${errors.opening_balance ? "border-rose-300" : ""}`}
+                    />
+                  </div>
+                </Field>
+              </FormSection>
+
+              <div className="h-px bg-[#eeecf5]" />
+
+              <FormSection icon={FileText} title="Notes" description="Anything worth remembering about this customer.">
+                <div>
+                  <Textarea
+                    id="cf-notes"
+                    value={form.notes}
+                    onChange={(event) => updateField("notes", event.target.value)}
+                    placeholder="Add any additional information…"
+                    rows={3}
+                    maxLength={500}
+                    className="resize-none rounded-xl border-violet-100 bg-white text-sm shadow-none placeholder:text-slate-400 focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/20"
+                  />
+                  <p className="mt-1 text-right text-[11px] text-slate-400">{form.notes.length}/500</p>
+                </div>
+              </FormSection>
+            </div>
+
+            <DialogFooter className="items-center border-t border-[#eae7f4] bg-[#faf9ff] px-5 py-4 sm:justify-between sm:px-7">
+              <p className="hidden text-xs text-slate-500 sm:block">
+                {ctl.dirty ? "You have unsaved changes." : "No changes yet."}
+              </p>
+
+              <div className="flex w-full gap-2 sm:w-auto">
+                <Button type="button" variant="outline" onClick={ctl.requestClose} disabled={saving} className={`h-11 flex-1 gap-2 px-5 text-sm font-medium sm:flex-none ${outlineBtn}`}>
+                  Cancel
+                </Button>
+
+                <Button
+                  type="submit"
+                  disabled={saving || (Boolean(editing) && !ctl.dirty)}
+                  className={`h-11 flex-1 gap-2 px-6 text-sm font-semibold sm:flex-none ${outlineBtn} disabled:opacity-50`}
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      Saving…
+                    </>
+                  ) : editing ? (
+                    <>
+                      <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                      Save changes
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="h-4 w-4" aria-hidden="true" />
+                      Add customer
+                    </>
+                  )}
+                </Button>
+              </div>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={ctl.discardOpen}
+        onOpenChange={ctl.setDiscardOpen}
+        tone="amber"
+        title="Discard your changes?"
+        description="You have unsaved changes. If you close now, they will be lost."
+        cancelLabel="Keep editing"
+        confirmLabel="Discard changes"
+        onConfirm={() => {
+          ctl.setDiscardOpen(false)
+          ctl.setOpen(false)
+        }}
+      />
+    </>
+  )
+}
+
 /* ==================================================
    CUSTOMER DETAILS
 ================================================== */
@@ -298,6 +982,7 @@ export default function CustomerDetails() {
   const [bills, setBills] = useState([])
   const [payments, setPayments] = useState([])
   const [advances, setAdvances] = useState([])
+  const [advanceAllocations, setAdvanceAllocations] = useState([])
   const [billItems, setBillItems] = useState([])
 
   const [loading, setLoading] = useState(true)
@@ -308,6 +993,24 @@ export default function CustomerDetails() {
   const [search, setSearch] = useState("")
   const [billFilter, setBillFilter] = useState("all")
   const [billDateFilter, setBillDateFilter] = useState("")
+  const [billFromDate, setBillFromDate] = useState("")
+  const [billToDate, setBillToDate] = useState("")
+  const [paymentSearch, setPaymentSearch] = useState("")
+  const [paymentModeFilter, setPaymentModeFilter] = useState("all")
+  const [paymentTypeFilter, setPaymentTypeFilter] = useState("all")
+  const [paymentDateFilter, setPaymentDateFilter] = useState("")
+  const [paymentFromDate, setPaymentFromDate] = useState("")
+  const [paymentToDate, setPaymentToDate] = useState("")
+  const [advanceSearch, setAdvanceSearch] = useState("")
+  const [advanceStatusFilter, setAdvanceStatusFilter] = useState("all")
+  const [advanceDateFilter, setAdvanceDateFilter] = useState("")
+  const [advanceFromDate, setAdvanceFromDate] = useState("")
+  const [advanceToDate, setAdvanceToDate] = useState("")
+  const [statementSearch, setStatementSearch] = useState("")
+  const [statementTypeFilter, setStatementTypeFilter] = useState("all")
+  const [statementDateFilter, setStatementDateFilter] = useState("")
+  const [statementFromDate, setStatementFromDate] = useState("")
+  const [statementToDate, setStatementToDate] = useState("")
   const [activeTab, setActiveTab] = useState("bills")
   const [expandedBill, setExpandedBill] = useState(null)
 
@@ -326,6 +1029,7 @@ export default function CustomerDetails() {
     setBills([])
     setPayments([])
     setAdvances([])
+    setAdvanceAllocations([])
     setBillItems([])
     setExpandedBill(null)
     setLoadError("")
@@ -348,7 +1052,7 @@ export default function CustomerDetails() {
       setLoadError("")
 
       try {
-        const [customerRes, billRes, paymentRes, advanceRes] = await Promise.all([
+        const [customerRes, safeBills, safePayments, safeAdvances] = await Promise.all([
           supabase
             .from("customers")
             .select("*")
@@ -356,54 +1060,72 @@ export default function CustomerDetails() {
             .eq("shop_id", currentShop.id)
             .maybeSingle(),
 
-          supabase
-            .from("bills")
-            .select("*")
-            .eq("shop_id", currentShop.id)
-            .eq("customer_id", customerId)
-            .order("created_at", { ascending: false }),
+          fetchAllRows(() =>
+            supabase
+              .from("bills")
+              .select("*")
+              .eq("shop_id", currentShop.id)
+              .eq("customer_id", customerId)
+              .order("bill_date", { ascending: false })
+              .order("id", { ascending: false })
+          ),
 
-          supabase
-            .from("payments")
-            .select("*")
-            .eq("shop_id", currentShop.id)
-            .eq("customer_id", customerId)
-            .order("payment_date", { ascending: false }),
+          fetchAllRows(() =>
+            supabase
+              .from("payments")
+              .select("*")
+              .eq("shop_id", currentShop.id)
+              .eq("customer_id", customerId)
+              .order("payment_date", { ascending: false })
+              .order("id", { ascending: false })
+          ),
 
-          supabase
-            .from("customer_advances")
-            .select("*")
-            .eq("customer_id", customerId)
-            .order("created_at", { ascending: false }),
+          fetchAllRows(() =>
+            supabase
+              .from("customer_advances")
+              .select("*")
+              .eq("shop_id", currentShop.id)
+              .eq("customer_id", customerId)
+              .order("created_at", { ascending: false })
+              .order("id", { ascending: false })
+          ),
         ])
 
         if (customerRes.error) throw customerRes.error
-        if (billRes.error) throw billRes.error
-        if (paymentRes.error) throw paymentRes.error
-        if (advanceRes.error) throw advanceRes.error
 
-        const safeBills = billRes.data || []
-        const billIds = safeBills.map((bill) => bill.id)
+        const billIds = safeBills.map((bill) => bill.id).filter(Boolean)
+        const advanceIds = safeAdvances.map((advance) => advance.id).filter(Boolean)
 
-        let items = []
-        if (billIds.length > 0) {
-          const { data, error } = await supabase
-            .from("bill_items")
-            .select("*")
-            .in("bill_id", billIds)
-            .order("sort_order")
-
-          if (error) throw error
-          items = data || []
-        }
+        const [items, allocations] = await Promise.all([
+          billIds.length
+            ? fetchAllRows(() =>
+                supabase
+                  .from("bill_items")
+                  .select("*")
+                  .in("bill_id", billIds)
+                  .order("sort_order", { ascending: true })
+              )
+            : Promise.resolve([]),
+          advanceIds.length
+            ? fetchAllRows(() =>
+                supabase
+                  .from("advance_allocations")
+                  .select("id, advance_id, bill_id, amount, created_at")
+                  .in("advance_id", advanceIds)
+                  .order("created_at", { ascending: true })
+                  .order("id", { ascending: true })
+              )
+            : Promise.resolve([]),
+        ])
 
         // A newer request has started — ignore this result
         if (requestId !== requestRef.current) return
 
         setCustomer(customerRes.data || null)
         setBills(safeBills)
-        setPayments(paymentRes.data || [])
-        setAdvances(advanceRes.data || [])
+        setPayments(safePayments)
+        setAdvances(safeAdvances)
+        setAdvanceAllocations(allocations)
         setBillItems(items)
         setLastUpdated(new Date())
         hasLoaded.current = true
@@ -426,6 +1148,43 @@ export default function CustomerDetails() {
   useEffect(() => {
     loadCustomerDetails()
   }, [loadCustomerDetails])
+
+  // Keep this profile current when bills, payments or advances are changed
+  // elsewhere in the app. Focus/visibility and a light polling fallback cover
+  // deployments where Supabase Realtime is not enabled for every table.
+  useEffect(() => {
+    if (!currentShop?.id || !customerId) return undefined
+
+    let refreshTimer = null
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return
+      if (refreshTimer) window.clearTimeout(refreshTimer)
+      refreshTimer = window.setTimeout(() => loadCustomerDetails(true), 350)
+    }
+
+    const channel = supabase
+      .channel(`customer-detail-sync-${currentShop.id}-${customerId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "bills", filter: `customer_id=eq.${customerId}` }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "payments", filter: `customer_id=eq.${customerId}` }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "customer_advances", filter: `customer_id=eq.${customerId}` }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "advance_allocations" }, refresh)
+      .subscribe()
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refresh()
+    }
+    window.addEventListener("focus", refresh)
+    document.addEventListener("visibilitychange", onVisibility)
+    const interval = window.setInterval(refresh, 30000)
+
+    return () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer)
+      window.clearInterval(interval)
+      window.removeEventListener("focus", refresh)
+      document.removeEventListener("visibilitychange", onVisibility)
+      supabase.removeChannel(channel)
+    }
+  }, [currentShop?.id, customerId, loadCustomerDetails])
 
   /* --------------------------------------------------
      DERIVED NUMBERS
@@ -517,6 +1276,8 @@ export default function CustomerDetails() {
     return bills.filter((bill) => {
       if (query && !bill.bill_number?.toLowerCase().includes(query)) return false
       if (billDateFilter && bill.bill_date !== billDateFilter) return false
+      if (billFromDate && (bill.bill_date || "") < billFromDate) return false
+      if (billToDate && (bill.bill_date || "") > billToDate) return false
 
       if (billFilter === "all") return true
       if (billFilter === "overdue") {
@@ -524,73 +1285,398 @@ export default function CustomerDetails() {
       }
       return getPaymentStatus(bill) === billFilter
     })
-  }, [bills, search, billFilter, billDateFilter, today])
+  }, [bills, search, billFilter, billDateFilter, billFromDate, billToDate, today])
 
-  // Ledger: debit = customer owes more, credit = customer owes less
+  // Unified payment history: include regular receipts, refunds and advance deposits.
+  // Some installations mirror an advance in `payments`; avoid showing that same
+  // deposit twice when it is also present in `customer_advances`.
+  const paymentHistoryRows = useMemo(() => {
+    const rows = payments.map((payment) => {
+      const bill = bills.find((item) => item.id === payment.bill_id)
+      const date = payment.payment_date || payment.created_at?.split("T")[0] || ""
+      return {
+        id: `payment-${payment.id}`,
+        originalId: payment.id,
+        source: "payment",
+        date,
+        stamp: payment.created_at || payment.payment_date || date,
+        mode: payment.payment_mode || "Other",
+        amount: num(payment.amount),
+        isRefund: Boolean(payment.is_refund),
+        isAdvance: Boolean(payment.is_advance),
+        isAdjustment: false,
+        billId: payment.bill_id || null,
+        billNumber: bill?.bill_number || "",
+        notes: payment.notes || payment.remark || "",
+        raw: payment,
+      }
+    })
+
+    advances.forEach((advance) => {
+      const advanceDate = advance.created_at?.split("T")[0] || advance.advance_date || ""
+      const mirrored = payments.some((payment) => {
+        if (!payment.is_advance) return false
+        const paymentDate = payment.payment_date || payment.created_at?.split("T")[0] || ""
+        return (
+          (payment.advance_id && payment.advance_id === advance.id) ||
+          (paymentDate === advanceDate && Math.abs(num(payment.amount) - num(advance.amount)) < 0.01)
+        )
+      })
+      if (!mirrored) {
+        rows.push({
+          id: `advance-${advance.id}`,
+          originalId: advance.id,
+          source: "advance",
+          date: advanceDate,
+          stamp: advance.created_at || advance.advance_date || advanceDate,
+          mode: advance.payment_mode || "Advance",
+          amount: num(advance.amount),
+          isRefund: false,
+          isAdvance: true,
+          isAdjustment: false,
+          billId: null,
+          billNumber: "",
+          notes: advance.notes || "",
+          raw: advance,
+        })
+      }
+    })
+
+    // Show every advance allocation as its own dated transaction in Payment History.
+    // It is informational only and is not counted as another cash receipt.
+    advanceAllocations.forEach((allocation) => {
+      const relatedBill = bills.find((item) => item.id === allocation.bill_id)
+      const relatedAdvance = advances.find((item) => item.id === allocation.advance_id)
+      rows.push({
+        id: `adjustment-${allocation.id}`,
+        originalId: allocation.id,
+        source: "adjustment",
+        date: allocation.created_at?.split("T")[0] || "",
+        stamp: allocation.created_at || "",
+        mode: "Advance adjustment",
+        amount: num(allocation.amount),
+        isRefund: false,
+        isAdvance: false,
+        isAdjustment: true,
+        billId: allocation.bill_id || null,
+        billNumber: relatedBill?.bill_number || "",
+        notes: relatedAdvance ? `Adjusted from advance ${String(relatedAdvance.id).slice(0, 8)}` : "Advance allocated to bill",
+        raw: allocation,
+      })
+    })
+
+    return rows.sort((a, b) => {
+      const dateOrder = (b.date || "").localeCompare(a.date || "")
+      if (dateOrder) return dateOrder
+      return new Date(b.stamp || 0).getTime() - new Date(a.stamp || 0).getTime()
+    })
+  }, [payments, advances, bills, advanceAllocations])
+
+  const filteredPaymentHistory = useMemo(() => {
+    const query = paymentSearch.trim().toLowerCase()
+    return paymentHistoryRows.filter((row) => {
+      if (paymentDateFilter && row.date !== paymentDateFilter) return false
+      if (paymentFromDate && row.date < paymentFromDate) return false
+      if (paymentToDate && row.date > paymentToDate) return false
+      if (paymentModeFilter !== "all" && row.mode.toLowerCase() !== paymentModeFilter) return false
+      if (paymentTypeFilter === "refund" && !row.isRefund) return false
+      if (paymentTypeFilter === "advance" && !row.isAdvance) return false
+      if (paymentTypeFilter === "adjustment" && !row.isAdjustment) return false
+      if (paymentTypeFilter === "received" && (row.isRefund || row.isAdvance || row.isAdjustment)) return false
+      if (query) {
+        const haystack = [row.mode, row.billNumber, row.notes, row.date, row.amount].join(" ").toLowerCase()
+        if (!haystack.includes(query)) return false
+      }
+      return true
+    })
+  }, [paymentHistoryRows, paymentSearch, paymentDateFilter, paymentFromDate, paymentToDate, paymentModeFilter, paymentTypeFilter])
+
+  const paymentModeOptions = useMemo(
+    () => [...new Set(paymentHistoryRows.map((row) => row.mode).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [paymentHistoryRows]
+  )
+
+  const paymentTypeCounts = useMemo(() => ({
+    all: paymentHistoryRows.length,
+    received: paymentHistoryRows.filter((row) => !row.isRefund && !row.isAdvance && !row.isAdjustment).length,
+    advance: paymentHistoryRows.filter((row) => row.isAdvance).length,
+    adjustment: paymentHistoryRows.filter((row) => row.isAdjustment).length,
+    refund: paymentHistoryRows.filter((row) => row.isRefund).length,
+  }), [paymentHistoryRows])
+
+  const filteredAdvances = useMemo(() => {
+    const query = advanceSearch.trim().toLowerCase()
+    return advances.filter((advance) => {
+      const date = advance.created_at?.split("T")[0] || advance.advance_date || ""
+      const remaining = num(advance.remaining_amount)
+      const haystack = [advance.payment_mode, advance.notes, advance.amount, date, advance.id].join(" ").toLowerCase()
+      if (query && !haystack.includes(query)) return false
+      if (advanceDateFilter && date !== advanceDateFilter) return false
+      if (advanceFromDate && date < advanceFromDate) return false
+      if (advanceToDate && date > advanceToDate) return false
+      if (advanceStatusFilter === "available" && remaining <= 0) return false
+      if (advanceStatusFilter === "used" && remaining > 0) return false
+      return true
+    }).sort((a, b) => (b.created_at || b.advance_date || "").localeCompare(a.created_at || a.advance_date || ""))
+  }, [advances, advanceSearch, advanceDateFilter, advanceFromDate, advanceToDate, advanceStatusFilter])
+
+  const advanceStatusCounts = useMemo(() => ({
+    all: advances.length,
+    available: advances.filter((advance) => num(advance.remaining_amount) > 0).length,
+    used: advances.filter((advance) => num(advance.remaining_amount) <= 0).length,
+  }), [advances])
+
+  const downloadRowsCsv = (headings, rows, filename) => {
+    if (!rows.length) {
+      toast.error("No records to export")
+      return
+    }
+    const cell = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`
+    const csv = "\uFEFF" + [headings, ...rows].map((row) => row.map(cell).join(",")).join("\r\n")
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }))
+    const link = document.createElement("a")
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  // Export a complete advance ledger for the selected advance deposits.
+  // Every receipt and every allocation is a separate dated event; the running
+  // balance is recalculated from the exported events so the CSV reconciles.
+  const exportAdvanceRows = (selectedAdvances, filename = "customer-advance-history.csv") => {
+    if (!selectedAdvances.length) {
+      toast.error("No advance records to export")
+      return
+    }
+
+    const selectedIds = new Set(selectedAdvances.map((advance) => String(advance.id)))
+    const events = []
+
+    selectedAdvances.forEach((advance) => {
+      const stamp = advance.created_at || advance.advance_date || ""
+      events.push({
+        advanceId: advance.id,
+        stamp,
+        date: stamp ? stamp.split("T")[0] : "",
+        type: "Advance received",
+        mode: advance.payment_mode || "Advance",
+        reference: String(advance.id),
+        billNumber: "",
+        received: num(advance.amount),
+        adjusted: 0,
+        notes: advance.notes || "",
+      })
+    })
+
+    advanceAllocations
+      .filter((allocation) => selectedIds.has(String(allocation.advance_id)))
+      .forEach((allocation) => {
+        const stamp = allocation.created_at || ""
+        const relatedBill = bills.find((bill) => bill.id === allocation.bill_id)
+        const relatedAdvance = selectedAdvances.find((advance) => String(advance.id) === String(allocation.advance_id))
+        events.push({
+          advanceId: allocation.advance_id,
+          stamp,
+          date: stamp ? stamp.split("T")[0] : "",
+          type: "Advance adjusted",
+          mode: relatedAdvance?.payment_mode || "Advance",
+          reference: String(allocation.id),
+          billNumber: relatedBill?.bill_number || String(allocation.bill_id || ""),
+          received: 0,
+          adjusted: num(allocation.amount),
+          notes: relatedBill ? `Adjusted against ${relatedBill.bill_number}` : "Advance allocated to bill",
+        })
+      })
+
+    events.sort((a, b) => {
+      const timeDiff = new Date(a.stamp || `${a.date}T00:00:00`).getTime() - new Date(b.stamp || `${b.date}T00:00:00`).getTime()
+      if (timeDiff) return timeDiff
+      return a.type.localeCompare(b.type)
+    })
+
+    let runningBalance = 0
+    let totalReceived = 0
+    let totalAdjusted = 0
+    const rows = events.map((event) => {
+      runningBalance += event.received - event.adjusted
+      totalReceived += event.received
+      totalAdjusted += event.adjusted
+      const parsed = event.stamp ? new Date(event.stamp) : null
+      const validDate = parsed && !Number.isNaN(parsed.getTime())
+      return [
+        event.date,
+        validDate ? parsed.toLocaleDateString("en-IN", { weekday: "long" }) : "",
+        validDate && event.stamp.includes("T") ? parsed.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }) : "Time not recorded",
+        event.type,
+        event.mode,
+        event.received,
+        event.adjusted,
+        runningBalance,
+        event.billNumber,
+        event.advanceId,
+        event.reference,
+        event.notes,
+      ]
+    })
+    rows.push([
+      "", "", "", "CLOSING SUMMARY", "", totalReceived, totalAdjusted,
+      runningBalance, "", "", "", `Total transactions: ${events.length}`,
+    ])
+
+    downloadRowsCsv(
+      ["Date", "Day", "Time", "Transaction", "Payment mode", "Advance received", "Advance adjusted", "Running available balance", "Bill number", "Advance ID", "Transaction ID", "Notes"],
+      rows,
+      filename
+    )
+    toast.success(`Complete advance history exported (${events.length} transactions)`)
+  }
+
+  const exportStatementRows = (rows, filename = "customer-account-statement.csv") => {
+    downloadRowsCsv(
+      ["Date", "Day", "Time", "Type", "Description", "Reference", "Debit", "Credit", "Advance adjusted", "Running balance", "Balance type"],
+      rows.map((row) => {
+        const parsed = row.stamp ? new Date(row.stamp) : null
+        return [row.date, parsed && !Number.isNaN(parsed.getTime()) ? parsed.toLocaleDateString("en-IN", { weekday: "long" }) : "", parsed && !Number.isNaN(parsed.getTime()) && row.stamp?.includes("T") ? parsed.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "", row.type, row.description, row.reference, row.debit, row.credit, row.adjustmentAmount || 0, Math.abs(row.balance), row.balance > 0 ? "Dr" : row.balance < 0 ? "Cr" : "Settled"]
+      }),
+      filename
+    )
+  }
+
+  const exportPaymentHistory = (rows, filename = "customer-payment-history.csv") => {
+    if (!rows.length) {
+      toast.error("No payment records to export")
+      return
+    }
+    const csvCell = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`
+    const headings = ["Date", "Day", "Time", "Type", "Payment mode", "Amount", "Bill number", "Notes"]
+    const data = rows.map((row) => {
+      const dateObj = row.stamp ? new Date(row.stamp) : new Date(`${row.date}T00:00:00`)
+      return [
+        row.date,
+        dateObj.toLocaleDateString("en-IN", { weekday: "long" }),
+        row.stamp ? dateObj.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "",
+        row.isAdjustment ? "Advance adjusted" : row.isRefund ? "Refund" : row.isAdvance ? "Advance received" : "Payment received",
+        row.mode,
+        row.isRefund ? -row.amount : row.amount,
+        row.billNumber,
+        row.notes,
+      ]
+    })
+    const csv = "\uFEFF" + [headings, ...data].map((line) => line.map(csvCell).join(",")).join("\r\n")
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }))
+    const link = document.createElement("a")
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  // Ledger: bills increase the balance due; receipts/advances reduce it.
+  // Advance allocations are included as zero-value informational events because
+  // the advance was already credited when it was received (no double counting).
   const statement = useMemo(() => {
-    const rank = { bill: 0, advance: 1, payment: 2, refund: 3 }
+    const rank = { bill: 0, advance: 1, advance_adjustment: 2, payment: 3, refund: 4 }
+    const billById = new Map(bills.map((bill) => [bill.id, bill]))
 
     const transactions = [
       ...bills.map((bill) => ({
         id: `bill-${bill.id}`,
-        date: bill.bill_date,
-        stamp: bill.created_at || "",
+        date: bill.bill_date || bill.created_at?.split("T")[0] || "",
+        stamp: bill.created_at || bill.bill_date || "",
         type: "bill",
-        reference: bill.bill_number,
+        billId: bill.id,
+        reference: bill.bill_number || String(bill.id).slice(0, 8),
         description: "Bill created",
         debit: num(bill.grand_total),
         credit: 0,
       })),
-
-      // Advance deposits are listed from customer_advances below, so
-      // payments flagged as advance are skipped here to avoid double counting.
-      ...payments
-        .filter((payment) => !payment.is_advance)
-        .map((payment) => ({
-          id: `payment-${payment.id}`,
-          date: payment.payment_date,
-          stamp: payment.created_at || "",
-          type: payment.is_refund ? "refund" : "payment",
-          reference: String(payment.id).slice(0, 8),
-          description: payment.is_refund
-            ? `Refund paid - ${payment.payment_mode || "Other"}`
-            : `Payment received - ${payment.payment_mode || "Other"}`,
-          debit: payment.is_refund ? num(payment.amount) : 0,
-          credit: payment.is_refund ? 0 : num(payment.amount),
-        })),
-
+      ...payments.filter((payment) => !payment.is_advance).map((payment) => ({
+        id: `payment-${payment.id}`,
+        date: payment.payment_date || payment.created_at?.split("T")[0] || "",
+        stamp: payment.created_at || payment.payment_date || "",
+        type: payment.is_refund ? "refund" : "payment",
+        billId: payment.bill_id || null,
+        reference: bills.find((bill) => bill.id === payment.bill_id)?.bill_number || String(payment.id).slice(0, 8),
+        description: payment.is_refund
+          ? `Refund paid - ${payment.payment_mode || "Other"}`
+          : `Payment received - ${payment.payment_mode || "Other"}`,
+        debit: payment.is_refund ? num(payment.amount) : 0,
+        credit: payment.is_refund ? 0 : num(payment.amount),
+      })),
       ...advances.map((advance) => ({
         id: `advance-${advance.id}`,
-        date: advance.created_at?.split("T")[0],
-        stamp: advance.created_at || "",
+        date: advance.created_at?.split("T")[0] || advance.advance_date || "",
+        stamp: advance.created_at || advance.advance_date || "",
         type: "advance",
         reference: String(advance.id).slice(0, 8),
-        description: "Advance received",
+        description: `Advance received${advance.payment_mode ? ` - ${advance.payment_mode}` : ""}`,
         debit: 0,
         credit: num(advance.amount),
       })),
-    ].sort(
-      (a, b) =>
-        (a.date || "").localeCompare(b.date || "") ||
-        rank[a.type] - rank[b.type] ||
-        a.stamp.localeCompare(b.stamp)
-    )
+      ...advanceAllocations.map((allocation) => {
+        const relatedBill = billById.get(allocation.bill_id)
+        return {
+          id: `advance-adjustment-${allocation.id}`,
+          date: allocation.created_at?.split("T")[0] || "",
+          stamp: allocation.created_at || "",
+          type: "advance_adjustment",
+          billId: allocation.bill_id || null,
+          adjustmentAmount: num(allocation.amount),
+          reference: relatedBill?.bill_number || String(allocation.bill_id || "").slice(0, 8),
+          description: `Advance adjusted · ${formatCurrency(num(allocation.amount))}`,
+          debit: 0,
+          credit: 0,
+        }
+      }),
+    ].sort((a, b) => {
+      const dateOrder = (a.date || "").localeCompare(b.date || "")
+      if (dateOrder) return dateOrder
+      const aTime = a.stamp ? new Date(a.stamp).getTime() : 0
+      const bTime = b.stamp ? new Date(b.stamp).getTime() : 0
+      if (aTime !== bTime) return aTime - bTime
+      return (rank[a.type] ?? 99) - (rank[b.type] ?? 99)
+    })
 
     let running = 0
-    const rows = transactions
-      .map((transaction) => {
-        running += transaction.debit - transaction.credit
-        return { ...transaction, balance: running }
-      })
-      .reverse()
+    const rows = transactions.map((transaction) => {
+      running += transaction.debit - transaction.credit
+      return { ...transaction, balance: running }
+    }).reverse()
 
     return {
       rows,
       closing: running,
-      totalDebit: transactions.reduce((total, t) => total + t.debit, 0),
-      totalCredit: transactions.reduce((total, t) => total + t.credit, 0),
+      totalDebit: transactions.reduce((total, transaction) => total + transaction.debit, 0),
+      totalCredit: transactions.reduce((total, transaction) => total + transaction.credit, 0),
     }
-  }, [bills, payments, advances])
+  }, [bills, payments, advances, advanceAllocations])
+
+
+  const filteredStatementRows = useMemo(() => {
+    const query = statementSearch.trim().toLowerCase()
+    return statement.rows.filter((row) => {
+      if (statementDateFilter && row.date !== statementDateFilter) return false
+      if (statementFromDate && row.date < statementFromDate) return false
+      if (statementToDate && row.date > statementToDate) return false
+      if (statementTypeFilter !== "all" && row.type !== statementTypeFilter) return false
+      if (query && ![row.description, row.reference, row.date, row.type, row.debit, row.credit, row.adjustmentAmount].join(" ").toLowerCase().includes(query)) return false
+      return true
+    })
+  }, [statement.rows, statementSearch, statementDateFilter, statementFromDate, statementToDate, statementTypeFilter])
+
+  const statementTypeCounts = useMemo(() => ({
+    all: statement.rows.length,
+    bill: statement.rows.filter((row) => row.type === "bill").length,
+    payment: statement.rows.filter((row) => row.type === "payment").length,
+    refund: statement.rows.filter((row) => row.type === "refund").length,
+    advance: statement.rows.filter((row) => row.type === "advance").length,
+    advance_adjustment: statement.rows.filter((row) => row.type === "advance_adjustment").length,
+  }), [statement.rows])
 
   const handleRefresh = () => loadCustomerDetails(true)
 
@@ -621,8 +1707,8 @@ export default function CustomerDetails() {
     }
   }
 
-  const handleExportBillsCsv = () => {
-    if (!filteredBills.length) {
+  const handleExportBillsCsv = (rowsToExport = filteredBills, filenameOverride = "") => {
+    if (!rowsToExport.length) {
       toast.error("No bills to export", { description: "Adjust your search or filters and try again." })
       return
     }
@@ -630,6 +1716,9 @@ export default function CustomerDetails() {
     const columns = [
       ["Bill Number", "bill_number"],
       ["Bill Date", "bill_date"],
+      ["Created Date", "__created_date"],
+      ["Created Day", "__created_day"],
+      ["Created Time", "__created_time"],
       ["Due Date", "due_date"],
       ["Status", "status"],
       ["Subtotal", "subtotal"],
@@ -649,15 +1738,24 @@ export default function CustomerDetails() {
 
     const rows = [
       columns.map(([label]) => escapeCsv(label)).join(","),
-      ...filteredBills.map((bill) =>
+      ...rowsToExport.map((bill) =>
         columns.map(([, key]) => {
+          const createdStamp = bill.created_at || bill.bill_date || ""
+          const createdDate = createdStamp ? new Date(createdStamp) : null
+          const validCreatedDate = createdDate && !Number.isNaN(createdDate.getTime())
           const value = key === "status"
             ? (num(bill.amount_due) <= 0
                 ? "Paid"
                 : num(bill.amount_paid) > 0 || num(bill.advance_adjusted) > 0
                   ? "Partial"
                   : "Unpaid")
-            : bill[key]
+            : key === "__created_date"
+              ? (validCreatedDate ? createdDate.toLocaleDateString("en-CA") : bill.bill_date || "")
+              : key === "__created_day"
+                ? (validCreatedDate ? createdDate.toLocaleDateString("en-IN", { weekday: "long" }) : "")
+                : key === "__created_time"
+                  ? (validCreatedDate && String(createdStamp).includes("T") ? createdDate.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }) : "Time not recorded")
+                  : bill[key]
           return escapeCsv(value)
         }).join(",")
       ),
@@ -669,12 +1767,12 @@ export default function CustomerDetails() {
     const link = document.createElement("a")
     const dateSuffix = billDateFilter || localDateString()
     link.href = url
-    link.download = `bills-${String(customer.name || "customer").trim().replace(/[^a-z0-9-_]+/gi, "-")}-${dateSuffix}.csv`
+    link.download = filenameOverride || `bills-${String(customer.name || "customer").trim().replace(/[^a-z0-9-_]+/gi, "-")}-${dateSuffix}.csv`
     document.body.appendChild(link)
     link.click()
     link.remove()
     URL.revokeObjectURL(url)
-    toast.success(`${filteredBills.length} bills exported to CSV`)
+    toast.success(`${rowsToExport.length} bill${rowsToExport.length === 1 ? "" : "s"} exported to CSV`)
   }
 
   const handleExportBillsPdf = () => {
@@ -785,6 +1883,15 @@ export default function CustomerDetails() {
       `. Please arrange the payment at your earliest convenience. Thank you!`
     return whatsappLink(customer.whatsapp || customer.mobile, text)
   }, [customer, calc.totalDue, calc.overdueAmount, currentShop?.name])
+
+  const customerForm = useCustomerForm({
+    shopId: currentShop?.id,
+    customers: customer ? [customer] : [],
+    onSaved: async (saved) => {
+      setCustomer(saved)
+      await loadCustomerDetails(true)
+    },
+  })
 
   /* --------------------------------------------------
      EMPTY / LOADING STATES
@@ -909,9 +2016,22 @@ export default function CustomerDetails() {
               <span className="truncate">{customer.name}</span>
             </nav>
 
-            <h1 className="truncate text-xl font-bold leading-tight tracking-tight text-[#171a39] sm:text-[30px]">
-              {customer.name}
-            </h1>
+            <div className="flex min-w-0 items-center gap-2">
+              <h1 className="truncate text-xl font-bold leading-tight tracking-tight text-[#171a39] sm:text-[30px]">
+                {customer.name}
+              </h1>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => customerForm.openEdit(customer)}
+                aria-label={`Edit ${customer.name}`}
+                title="Edit customer"
+                className="h-7 w-7 shrink-0 rounded-lg border-violet-200 bg-white text-slate-600 shadow-sm hover:bg-violet-50 hover:text-violet-700"
+              >
+                <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+              </Button>
+            </div>
 
             <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600 sm:text-sm">
               {calc.totalDue > 0 ? (
@@ -1062,7 +2182,7 @@ export default function CustomerDetails() {
 
       {/* MAIN CONTENT */}
 
-      <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[1.65fr_1fr]">
+      <section className="grid min-w-0 grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(300px,1fr)]">
         {/* LEFT: TABS */}
 
         <div className="min-w-0 space-y-4">
@@ -1120,6 +2240,11 @@ export default function CustomerDetails() {
                 icon={Receipt}
                 title="Customer bills"
                 description={`Newest first · ${filteredBills.length} of ${bills.length} shown`}
+                action={
+                  <Button type="button" variant="outline" size="sm" onClick={() => handleExportBillsCsv(filteredBills)} disabled={!filteredBills.length} className="h-9 shrink-0 gap-2 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50">
+                    <Download className="h-4 w-4" /> Export
+                  </Button>
+                }
               />
 
               <div className="space-y-3 border-b border-[#eeecf5] p-4 sm:px-5">
@@ -1137,29 +2262,6 @@ export default function CustomerDetails() {
                       onChange={(event) => setSearch(event.target.value)}
                       className="h-11 w-full rounded-xl border-violet-100 bg-white pl-10 text-sm shadow-none focus-visible:border-violet-400 focus-visible:ring-2 focus-visible:ring-violet-500/20"
                     />
-                  </div>
-
-                  <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handleExportBillsCsv}
-                      disabled={filteredBills.length === 0}
-                      className="h-11 flex-1 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50 disabled:opacity-50 sm:flex-none"
-                    >
-                      <FileSpreadsheet className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                      Export CSV
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handleExportBillsPdf}
-                      disabled={filteredBills.length === 0}
-                      className="h-11 flex-1 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50 disabled:opacity-50 sm:flex-none"
-                    >
-                      <FileDown className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                      Export PDF
-                    </Button>
                   </div>
                 </div>
 
@@ -1199,20 +2301,28 @@ export default function CustomerDetails() {
                         className="h-10 rounded-xl border-violet-100 bg-white text-sm shadow-none focus-visible:border-violet-400 focus-visible:ring-2 focus-visible:ring-violet-500/20"
                       />
                     </div>
+                    <div className="min-w-[150px]">
+                      <label htmlFor="customer-bill-from" className="mb-1.5 block text-xs font-semibold text-slate-600">From</label>
+                      <Input id="customer-bill-from" type="date" value={billFromDate} onChange={(event) => setBillFromDate(event.target.value)} className="h-10 w-full min-w-0 rounded-xl border-violet-100 bg-white text-sm" />
+                    </div>
+                    <div className="min-w-[150px]">
+                      <label htmlFor="customer-bill-to" className="mb-1.5 block text-xs font-semibold text-slate-600">To</label>
+                      <Input id="customer-bill-to" type="date" value={billToDate} onChange={(event) => setBillToDate(event.target.value)} className="h-10 w-full min-w-0 rounded-xl border-violet-100 bg-white text-sm" />
+                    </div>
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => setBillDateFilter(today)}
+                      onClick={() => { setBillDateFilter(today); setBillFromDate(""); setBillToDate("") }}
                       className="h-10 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50"
                     >
                       <CalendarDays className="mr-1.5 h-4 w-4" aria-hidden="true" />
                       Today
                     </Button>
-                    {billDateFilter && (
+                    {(billDateFilter || billFromDate || billToDate) && (
                       <Button
                         type="button"
                         variant="ghost"
-                        onClick={() => setBillDateFilter("")}
+                        onClick={() => { setBillDateFilter(""); setBillFromDate(""); setBillToDate("") }}
                         className="h-10 rounded-xl px-3 text-xs font-semibold text-slate-600 hover:bg-violet-50"
                       >
                         Clear date
@@ -1327,7 +2437,6 @@ export default function CustomerDetails() {
                                   </p>
                                 </div>
                               </div>
-
                               <ChevronDown
                                 className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
                                 aria-hidden="true"
@@ -1528,77 +2637,127 @@ export default function CustomerDetails() {
               <SectionHeader
                 icon={CreditCard}
                 title="Payment history"
-                description={`${payments.length} ${payments.length === 1 ? "record" : "records"} · net ${formatCurrency(calc.totalReceived)}`}
+                description={`${filteredPaymentHistory.length} of ${paymentHistoryRows.length} records · net ${formatCurrency(calc.totalReceived)}`}
+                action={
+                  <Button type="button" variant="outline" size="sm" onClick={() => exportPaymentHistory(filteredPaymentHistory, `payments-${customer?.name || "customer"}.csv`)} disabled={!filteredPaymentHistory.length} className="h-9 shrink-0 gap-2 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50">
+                    <Download className="h-4 w-4" /> Export
+                  </Button>
+                }
               />
 
-              {payments.length === 0 ? (
-                <EmptyState
-                  icon={CreditCard}
-                  title="No payments recorded"
-                  description="Payments received from this customer will appear here."
-                />
+              {paymentHistoryRows.length === 0 ? (
+                <EmptyState icon={CreditCard} title="No payments recorded" description="Payments, refunds and advance deposits from this customer will appear here." />
               ) : (
-                <ul className="divide-y divide-[#eeecf5]">
-                  {payments.map((payment) => {
-                    const relatedBill = bills.find((bill) => bill.id === payment.bill_id)
-                    const refund = Boolean(payment.is_refund)
+                <>
+                  <div className="border-b border-[#eeecf5] bg-[#fcfbff] p-4 sm:p-5">
+                    <div className="relative min-w-0">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input value={paymentSearch} onChange={(event) => setPaymentSearch(event.target.value)} placeholder="Search amount, bill, mode…" aria-label="Search payment history" className="h-11 w-full rounded-xl border-violet-100 bg-white pl-10 text-sm shadow-none focus-visible:border-violet-400 focus-visible:ring-2 focus-visible:ring-violet-500/20" />
+                    </div>
 
-                    return (
-                      <li
-                        key={payment.id}
-                        className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 transition-colors hover:bg-[#f9f8ff] sm:px-5"
-                      >
-                        <div className="flex min-w-0 items-center gap-3">
-                          <div
-                            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
-                              refund ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-700"
-                            }`}
-                          >
-                            <ArrowDownLeft
-                              className={`h-5 w-5 ${refund ? "rotate-180" : ""}`}
-                              aria-hidden="true"
-                            />
-                          </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {[
+                        { id: "all", label: "All" },
+                        { id: "received", label: "Payments" },
+                        { id: "advance", label: "Advance received" },
+                        { id: "adjustment", label: "Advance adjusted" },
+                        { id: "refund", label: "Refunds" },
+                      ].map((filter) => {
+                        const active = paymentTypeFilter === filter.id
+                        return (
+                          <button key={filter.id} type="button" onClick={() => setPaymentTypeFilter(filter.id)} aria-pressed={active}
+                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${active ? "border-violet-200 bg-violet-50 text-violet-800" : "border-violet-100 bg-white text-slate-600 hover:bg-violet-50"}`}>
+                            {filter.label}<span className="ml-1.5 text-slate-400">{paymentTypeCounts[filter.id]}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
 
-                          <div className="min-w-0">
-                            <p className="text-sm font-bold text-slate-900">
-                              {payment.payment_mode || "Payment"}
-                              {payment.is_advance && (
-                                <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
-                                  Advance
-                                </span>
-                              )}
-                            </p>
-                            <p className="mt-0.5 text-xs text-slate-500">
-                              {formatDate(payment.payment_date)} ·{" "}
-                              {relatedBill ? relatedBill.bill_number : "No bill reference"}
-                            </p>
-                          </div>
+                    {paymentModeOptions.length > 1 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {[{ id: "all", label: "All modes" }, ...paymentModeOptions.map((mode) => ({ id: mode.toLowerCase(), label: mode }))].map((filter) => {
+                          const active = paymentModeFilter === filter.id
+                          const count = filter.id === "all" ? paymentHistoryRows.length : paymentHistoryRows.filter((row) => row.mode.toLowerCase() === filter.id).length
+                          return (
+                            <button key={filter.id} type="button" onClick={() => setPaymentModeFilter(filter.id)} aria-pressed={active}
+                              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${active ? "border-violet-200 bg-violet-50 text-violet-800" : "border-violet-100 bg-white text-slate-600 hover:bg-violet-50"}`}>
+                              {filter.label}<span className="ml-1.5 text-slate-400">{count}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    <div className="mt-3 border-t border-[#eeecf5] pt-3">
+                      <div className="mb-2 text-xs font-semibold text-slate-600">Filter by payment date</div>
+                      <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                        <label className="block min-w-0 text-xs font-semibold text-slate-600">Date
+                          <Input type="date" value={paymentDateFilter} onChange={(event) => setPaymentDateFilter(event.target.value)} className="mt-1 h-10 w-full min-w-0 rounded-xl border-violet-100 bg-white text-sm" />
+                        </label>
+                        <label className="block min-w-0 text-xs font-semibold text-slate-600">From
+                          <Input type="date" value={paymentFromDate} onChange={(event) => setPaymentFromDate(event.target.value)} className="mt-1 h-10 w-full min-w-0 rounded-xl border-violet-100 bg-white text-sm" />
+                        </label>
+                        <label className="block min-w-0 text-xs font-semibold text-slate-600">To
+                          <Input type="date" value={paymentToDate} onChange={(event) => setPaymentToDate(event.target.value)} className="mt-1 h-10 w-full min-w-0 rounded-xl border-violet-100 bg-white text-sm" />
+                        </label>
+                        <div className="flex items-end">
+                          <Button type="button" variant="outline" onClick={() => { setPaymentDateFilter(today); setPaymentFromDate(""); setPaymentToDate("") }} className="h-10 w-full rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50 sm:w-auto">
+                            <CalendarDays className="mr-1.5 h-4 w-4" /> Today
+                          </Button>
                         </div>
+                      </div>
+                    </div>
 
-                        <div className="text-right">
-                          <p
-                            className={`text-base font-bold tabular-nums ${
-                              refund ? "text-rose-600" : "text-emerald-700"
-                            }`}
-                          >
-                            {refund ? "-" : "+"}
-                            {formatCurrency(payment.amount)}
-                          </p>
-                          <span
-                            className={`mt-1 inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
-                              refund
-                                ? "border-rose-200 bg-rose-100 text-rose-700"
-                                : "border-emerald-200 bg-emerald-100 text-emerald-700"
-                            }`}
-                          >
-                            {refund ? "Refunded" : "Received"}
-                          </span>
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ul>
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs text-slate-500"><Filter className="mr-1 inline h-3.5 w-3.5" /> Showing {filteredPaymentHistory.length} of {paymentHistoryRows.length} records</p>
+                      {(paymentSearch || paymentModeFilter !== "all" || paymentTypeFilter !== "all" || paymentDateFilter || paymentFromDate || paymentToDate) && (
+                        <Button type="button" variant="ghost" size="sm" onClick={() => { setPaymentSearch(""); setPaymentModeFilter("all"); setPaymentTypeFilter("all"); setPaymentDateFilter(""); setPaymentFromDate(""); setPaymentToDate("") }} className="h-8 gap-1.5 rounded-lg px-2 text-xs text-violet-700 hover:bg-violet-50">
+                          <X className="h-3.5 w-3.5" /> Clear filters
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {filteredPaymentHistory.length === 0 ? (
+                    <EmptyState icon={Search} title="No matching transactions" description="Try changing the date range or clearing one of the filters." />
+                  ) : (
+                    <ul className="divide-y divide-[#eeecf5]">
+                      {filteredPaymentHistory.map((row) => {
+                        const refund = row.isRefund
+                        const adjustment = row.isAdjustment
+                        const stampDate = row.stamp ? new Date(row.stamp) : (row.date ? new Date(`${row.date}T00:00:00`) : null)
+                        const weekday = stampDate && !Number.isNaN(stampDate.getTime()) ? stampDate.toLocaleDateString("en-IN", { weekday: "long" }) : ""
+                        const time = row.stamp ? stampDate.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "Time not recorded"
+                        return (
+                          <li key={row.id} className="flex min-w-0 flex-col items-stretch gap-3 px-4 py-4 transition-colors hover:bg-[#f9f8ff] sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                            <div className="flex min-w-0 w-full flex-1 items-start gap-3 sm:items-center">
+                              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${refund ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-700"}`}>
+                                <ArrowDownLeft className={`h-5 w-5 ${refund ? "rotate-180" : ""}`} aria-hidden="true" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold text-slate-900">
+                                  {row.mode}
+                                  {row.isAdvance && <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">Advance received</span>}
+                                  {adjustment && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">Adjusted</span>}
+                                  {refund && <span className="ml-2 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700">Refund</span>}
+                                </p>
+                                <p className="mt-0.5 break-words text-xs leading-5 text-slate-500">{row.date ? formatDate(row.date) : "Date not recorded"}{weekday ? ` · ${weekday}` : ""} · {time}{row.billNumber ? ` · ${row.billNumber}` : " · No bill reference"}</p>
+                                {row.notes && <p className="mt-1 break-words text-xs text-slate-500">{row.notes}</p>}
+                              </div>
+                            </div>
+                            <div className="flex w-full min-w-0 items-center justify-end gap-3 pl-[52px] sm:w-auto sm:justify-end sm:pl-0">
+                              <div className="min-w-0 text-left sm:min-w-[115px] sm:text-right">
+                                <p className={`text-base font-bold tabular-nums ${refund ? "text-rose-600" : adjustment ? "text-violet-700" : "text-emerald-700"}`}>{refund ? "−" : adjustment ? "" : "+"}{formatCurrency(row.amount)}</p>
+                                <span className={`mt-1 inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${refund ? "border-rose-200 bg-rose-100 text-rose-700" : adjustment ? "border-amber-200 bg-amber-100 text-amber-700" : "border-emerald-200 bg-emerald-100 text-emerald-700"}`}>{refund ? "Refunded" : adjustment ? "Adjusted" : "Received"}</span>
+                              </div>
+
+                            </div>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </>
               )}
             </Card>
           )}
@@ -1611,6 +2770,11 @@ export default function CustomerDetails() {
                 icon={Wallet}
                 title="Advance history"
                 description="Customer deposits and what is left of each."
+                action={
+                  <Button type="button" variant="outline" size="sm" onClick={() => exportAdvanceRows(filteredAdvances)} disabled={!filteredAdvances.length} className="h-9 shrink-0 gap-2 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50">
+                    <Download className="h-4 w-4" /> Export
+                  </Button>
+                }
               />
 
               {advances.length === 0 ? (
@@ -1620,63 +2784,107 @@ export default function CustomerDetails() {
                   description="No advance payments have been recorded for this customer."
                 />
               ) : (
-                <ul className="divide-y divide-[#eeecf5]">
-                  {advances.map((advance) => {
-                    const original = num(advance.amount)
-                    const remaining = num(advance.remaining_amount)
-                    const adjusted = Math.max(0, original - remaining)
-                    const usedPercent =
-                      original > 0 ? Math.min(100, Math.round((adjusted / original) * 100)) : 0
+                <>
+                  <div className="border-b border-[#eeecf5] bg-[#fcfbff] p-4 sm:p-5">
+                    <div className="relative min-w-0">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input value={advanceSearch} onChange={(event) => setAdvanceSearch(event.target.value)} placeholder="Search amount, mode or note…" aria-label="Search advances" className="h-11 w-full rounded-xl border-violet-100 bg-white pl-10 text-sm shadow-none focus-visible:border-violet-400 focus-visible:ring-2 focus-visible:ring-violet-500/20" />
+                    </div>
 
-                    return (
-                      <li key={advance.id} className="p-4 sm:p-5">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-bold text-slate-900">Advance deposit</p>
-                            <p className="mt-0.5 text-xs text-slate-500">
-                              {advance.created_at ? formatDate(advance.created_at.split("T")[0]) : "—"}
-                            </p>
-                          </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {[
+                        { id: "all", label: "All" },
+                        { id: "available", label: "Available balance" },
+                        { id: "used", label: "Fully used" },
+                      ].map((filter) => {
+                        const active = advanceStatusFilter === filter.id
+                        return (
+                          <button key={filter.id} type="button" onClick={() => setAdvanceStatusFilter(filter.id)} aria-pressed={active}
+                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${active ? "border-violet-200 bg-violet-50 text-violet-800" : "border-violet-100 bg-white text-slate-600 hover:bg-violet-50"}`}>
+                            {filter.label}<span className="ml-1.5 text-slate-400">{advanceStatusCounts[filter.id]}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
 
-                          <span
-                            className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${
-                              remaining > 0
-                                ? "border-emerald-200 bg-emerald-100 text-emerald-700"
-                                : "border-slate-200 bg-slate-100 text-slate-600"
-                            }`}
-                          >
-                            {remaining > 0 ? "Available" : "Fully used"}
-                          </span>
+                    <div className="mt-3 border-t border-[#eeecf5] pt-3">
+                      <div className="mb-2 text-xs font-semibold text-slate-600">Filter by advance date</div>
+                      <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                        <label className="block min-w-0 text-xs font-semibold text-slate-600">Date
+                          <Input type="date" value={advanceDateFilter} onChange={(event) => setAdvanceDateFilter(event.target.value)} className="mt-1 h-10 w-full min-w-0 rounded-xl border-violet-100 bg-white text-sm" />
+                        </label>
+                        <label className="block min-w-0 text-xs font-semibold text-slate-600">From
+                          <Input type="date" value={advanceFromDate} onChange={(event) => setAdvanceFromDate(event.target.value)} className="mt-1 h-10 w-full min-w-0 rounded-xl border-violet-100 bg-white text-sm" />
+                        </label>
+                        <label className="block min-w-0 text-xs font-semibold text-slate-600">To
+                          <Input type="date" value={advanceToDate} onChange={(event) => setAdvanceToDate(event.target.value)} className="mt-1 h-10 w-full min-w-0 rounded-xl border-violet-100 bg-white text-sm" />
+                        </label>
+                        <div className="flex items-end">
+                          <Button type="button" variant="outline" onClick={() => { setAdvanceDateFilter(today); setAdvanceFromDate(""); setAdvanceToDate("") }} className="h-10 w-full rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50 sm:w-auto">
+                            <CalendarDays className="mr-1.5 h-4 w-4" /> Today
+                          </Button>
                         </div>
+                      </div>
+                    </div>
 
-                        <div className="mt-4 grid grid-cols-3 gap-3">
-                          <MiniStat label="Received" value={formatCurrency(original)} />
-                          <MiniStat label="Adjusted" value={formatCurrency(adjusted)} />
-                          <MiniStat label="Remaining" value={formatCurrency(remaining)} tone="emerald" />
-                        </div>
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs text-slate-500"><Filter className="mr-1 inline h-3.5 w-3.5" /> Showing {filteredAdvances.length} of {advances.length} records</p>
+                      {(advanceSearch || advanceStatusFilter !== "all" || advanceDateFilter || advanceFromDate || advanceToDate) && (
+                        <Button type="button" variant="ghost" size="sm" onClick={() => { setAdvanceSearch(""); setAdvanceStatusFilter("all"); setAdvanceDateFilter(""); setAdvanceFromDate(""); setAdvanceToDate("") }} className="h-8 gap-1.5 rounded-lg px-2 text-xs text-violet-700 hover:bg-violet-50">
+                          <X className="h-3.5 w-3.5" /> Clear filters
+                        </Button>
+                      )}
+                    </div>
+                  </div>
 
-                        <div
-                          className="mt-3 h-2 overflow-hidden rounded-full bg-emerald-100"
-                          role="progressbar"
-                          aria-label="Advance used"
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                          aria-valuenow={usedPercent}
-                        >
-                          <div
-                            className="h-full rounded-full bg-violet-500 transition-all duration-500"
-                            style={{ width: `${usedPercent}%` }}
-                          />
-                        </div>
-                        <p className="mt-1.5 text-[11px] text-slate-500">{usedPercent}% used</p>
-
-                        {advance.notes && (
-                          <p className="mt-2 text-xs text-slate-600">{advance.notes}</p>
-                        )}
-                      </li>
-                    )
-                  })}
-                </ul>
+                  {filteredAdvances.length === 0 ? (
+                    <EmptyState icon={Search} title="No advances match" description="Try changing or clearing the filters." />
+                  ) : (
+                    <ul className="divide-y divide-[#eeecf5]">
+                      {filteredAdvances.map((advance) => {
+                        const original = num(advance.amount)
+                        const remaining = num(advance.remaining_amount)
+                        const adjusted = Math.max(0, original - remaining)
+                        const usedPercent = original > 0 ? Math.min(100, Math.round((adjusted / original) * 100)) : 0
+                        return (
+                          <li key={advance.id} className="p-4 sm:p-5">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-bold text-slate-900">Advance deposit · {advance.payment_mode || "Other"}</p>
+                                <p className="mt-0.5 text-xs text-slate-500">{formatDateTime(advance.created_at || advance.advance_date)}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${remaining > 0 ? "border-emerald-200 bg-emerald-100 text-emerald-700" : "border-slate-200 bg-slate-100 text-slate-600"}`}>{remaining > 0 ? "Available" : "Fully used"}</span>
+                                
+                              </div>
+                            </div>
+                            <div className="mt-4 grid grid-cols-1 gap-2 min-[420px]:grid-cols-3 sm:gap-3">
+                              <MiniStat label="Received" value={formatCurrency(original)} />
+                              <MiniStat label="Adjusted" value={formatCurrency(adjusted)} />
+                              <MiniStat label="Remaining" value={formatCurrency(remaining)} tone="emerald" />
+                            </div>
+                            <div className="mt-3 h-2 overflow-hidden rounded-full bg-emerald-100" role="progressbar" aria-label="Advance used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={usedPercent}>
+                              <div className="h-full rounded-full bg-violet-500 transition-all duration-500" style={{ width: `${usedPercent}%` }} />
+                            </div>
+                            <p className="mt-1.5 text-[11px] text-slate-500">{usedPercent}% used</p>
+                            {advance.notes && <p className="mt-2 text-xs text-slate-600">{advance.notes}</p>}
+                            {advanceAllocations.filter((allocation) => allocation.advance_id === advance.id).length > 0 && (
+                              <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50/60 p-3">
+                                <p className="text-[11px] font-bold uppercase tracking-wide text-violet-800">Adjustment history</p>
+                                <ul className="mt-2 space-y-2">
+                                  {advanceAllocations.filter((allocation) => allocation.advance_id === advance.id).map((allocation) => {
+                                    const relatedBill = bills.find((bill) => bill.id === allocation.bill_id)
+                                    return <li key={allocation.id} className="flex flex-wrap items-center justify-between gap-2 text-xs"><span className="min-w-0 text-slate-600">{relatedBill?.bill_number || `Bill ${String(allocation.bill_id || "").slice(0, 8)}`}<span className="ml-1 text-slate-400">· {formatDateTime(allocation.created_at)}</span></span><strong className="shrink-0 font-bold tabular-nums text-violet-800">{formatCurrency(allocation.amount)}</strong></li>
+                                  })}
+                                </ul>
+                              </div>
+                            )}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </>
               )}
             </Card>
           )}
@@ -1689,6 +2897,11 @@ export default function CustomerDetails() {
                 icon={History}
                 title="Account statement"
                 description="Bills, payments and advances in date order."
+                action={
+                  <Button type="button" variant="outline" size="sm" onClick={() => exportStatementRows(filteredStatementRows)} disabled={!filteredStatementRows.length} className="h-9 shrink-0 gap-2 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50">
+                    <Download className="h-4 w-4" /> Export
+                  </Button>
+                }
               />
 
               {statement.rows.length === 0 ? (
@@ -1699,6 +2912,60 @@ export default function CustomerDetails() {
                 />
               ) : (
                 <>
+                  <div className="border-b border-[#eeecf5] bg-[#fcfbff] p-4 sm:p-5">
+                    <div className="relative min-w-0">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input value={statementSearch} onChange={(event) => setStatementSearch(event.target.value)} placeholder="Search description, bill number or amount…" aria-label="Search account statement" className="h-11 w-full rounded-xl border-violet-100 bg-white pl-10 text-sm shadow-none focus-visible:border-violet-400 focus-visible:ring-2 focus-visible:ring-violet-500/20" />
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {[
+                        { id: "all", label: "All" },
+                        { id: "bill", label: "Bills" },
+                        { id: "payment", label: "Payments" },
+                        { id: "refund", label: "Refunds" },
+                        { id: "advance", label: "Advance received" },
+                        { id: "advance_adjustment", label: "Advance adjusted" },
+                      ].map((filter) => {
+                        const active = statementTypeFilter === filter.id
+                        return (
+                          <button key={filter.id} type="button" onClick={() => setStatementTypeFilter(filter.id)} aria-pressed={active}
+                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${active ? "border-violet-200 bg-violet-50 text-violet-800" : "border-violet-100 bg-white text-slate-600 hover:bg-violet-50"}`}>
+                            {filter.label}<span className="ml-1.5 text-slate-400">{statementTypeCounts[filter.id]}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    <div className="mt-3 border-t border-[#eeecf5] pt-3">
+                      <div className="mb-2 text-xs font-semibold text-slate-600">Filter by statement date</div>
+                      <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                        <label className="block min-w-0 text-xs font-semibold text-slate-600">Date
+                          <Input type="date" value={statementDateFilter} onChange={(event) => setStatementDateFilter(event.target.value)} className="mt-1 h-10 w-full min-w-0 rounded-xl border-violet-100 bg-white text-sm" />
+                        </label>
+                        <label className="block min-w-0 text-xs font-semibold text-slate-600">From
+                          <Input type="date" value={statementFromDate} onChange={(event) => setStatementFromDate(event.target.value)} className="mt-1 h-10 w-full min-w-0 rounded-xl border-violet-100 bg-white text-sm" />
+                        </label>
+                        <label className="block min-w-0 text-xs font-semibold text-slate-600">To
+                          <Input type="date" value={statementToDate} onChange={(event) => setStatementToDate(event.target.value)} className="mt-1 h-10 w-full min-w-0 rounded-xl border-violet-100 bg-white text-sm" />
+                        </label>
+                        <div className="flex items-end">
+                          <Button type="button" variant="outline" onClick={() => { setStatementDateFilter(today); setStatementFromDate(""); setStatementToDate("") }} className="h-10 w-full rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50 sm:w-auto">
+                            <CalendarDays className="mr-1.5 h-4 w-4" /> Today
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs text-slate-500"><Filter className="mr-1 inline h-3.5 w-3.5" /> Showing {filteredStatementRows.length} of {statement.rows.length} records</p>
+                      {(statementSearch || statementTypeFilter !== "all" || statementDateFilter || statementFromDate || statementToDate) && (
+                        <Button type="button" variant="ghost" size="sm" onClick={() => { setStatementSearch(""); setStatementTypeFilter("all"); setStatementDateFilter(""); setStatementFromDate(""); setStatementToDate("") }} className="h-8 gap-1.5 rounded-lg px-2 text-xs text-violet-700 hover:bg-violet-50">
+                          <X className="h-3.5 w-3.5" /> Clear filters
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                   <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-3 sm:px-5">
                     <MiniStat label="Total billed (debit)" value={formatCurrency(statement.totalDebit)} />
                     <MiniStat
@@ -1714,20 +2981,22 @@ export default function CustomerDetails() {
                   </div>
 
                   <div className="overflow-x-auto px-3 pb-3 sm:px-4">
-                    <table className="w-full min-w-[680px] text-left">
+                    <table className="w-full min-w-[930px] text-left">
                       <caption className="sr-only">Account statement</caption>
                       <thead>
                         <tr className="bg-[#f5f3fc] text-[11px] font-semibold text-slate-600">
                           <th scope="col" className="rounded-l-xl px-3 py-3">Date</th>
+                          <th scope="col" className="px-3 py-3">Time</th>
                           <th scope="col" className="px-3 py-3">Description</th>
                           <th scope="col" className="px-3 py-3 text-right">Debit</th>
                           <th scope="col" className="px-3 py-3 text-right">Credit</th>
-                          <th scope="col" className="rounded-r-xl px-3 py-3 text-right">Balance</th>
+                          <th scope="col" className="px-3 py-3 text-right">Advance adjusted</th>
+                          <th scope="col" className="px-3 py-3 text-right">Balance</th>
                         </tr>
                       </thead>
 
                       <tbody>
-                        {statement.rows.map((row) => (
+                        {filteredStatementRows.length === 0 ? <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">No statement entries match these filters.</td></tr> : filteredStatementRows.map((row) => (
                           <tr
                             key={row.id}
                             className="border-b border-[#eeecf5] transition-colors last:border-0 hover:bg-[#f9f8ff]"
@@ -1735,15 +3004,40 @@ export default function CustomerDetails() {
                             <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-600">
                               {row.date ? formatDate(row.date) : "—"}
                             </td>
+                            <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-600">
+                              {row.stamp && !Number.isNaN(new Date(row.stamp).getTime())
+                                ? new Date(row.stamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
+                                : "—"}
+                            </td>
                             <td className="px-3 py-3">
-                              <p className="text-xs font-bold text-slate-800">{row.description}</p>
-                              <p className="mt-0.5 text-[11px] text-slate-500">{row.reference}</p>
+                              {row.billId ? (
+                                <Link
+                                  to={`/bills/${row.billId}`}
+                                  className="group inline-flex max-w-full flex-col rounded-md text-left outline-none transition-colors hover:text-violet-700 focus-visible:ring-2 focus-visible:ring-violet-500"
+                                  title={`Open bill ${row.reference}`}
+                                >
+                                  <span className="text-xs font-bold text-slate-800 group-hover:text-violet-700 group-hover:underline">
+                                    {row.description}
+                                  </span>
+                                  <span className="mt-0.5 text-[11px] text-slate-500 group-hover:text-violet-600">
+                                    {row.reference} · Open bill ↗
+                                  </span>
+                                </Link>
+                              ) : (
+                                <>
+                                  <p className="text-xs font-bold text-slate-800">{row.description}</p>
+                                  <p className="mt-0.5 text-[11px] text-slate-500">{row.reference}</p>
+                                </>
+                              )}
                             </td>
                             <td className="whitespace-nowrap px-3 py-3 text-right text-xs font-semibold tabular-nums text-rose-600">
                               {row.debit > 0 ? formatCurrency(row.debit) : "—"}
                             </td>
                             <td className="whitespace-nowrap px-3 py-3 text-right text-xs font-semibold tabular-nums text-emerald-700">
                               {row.credit > 0 ? formatCurrency(row.credit) : "—"}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-3 text-right text-xs font-semibold tabular-nums text-violet-700">
+                              {row.adjustmentAmount > 0 ? formatCurrency(row.adjustmentAmount) : "—"}
                             </td>
                             <td className="whitespace-nowrap px-3 py-3 text-right text-xs font-bold tabular-nums text-slate-900">
                               {formatCurrency(Math.abs(row.balance))}
@@ -1759,7 +3053,8 @@ export default function CustomerDetails() {
 
                   <p className="border-t border-[#eeecf5] px-5 py-3 text-[11px] leading-4 text-slate-500">
                     Dr means the customer owes you. Cr means you owe the customer (advance or refund
-                    due).
+                    due). Advance adjusted is shown separately for reference; it is not counted again because the
+                    original advance receipt is already included in Credit.
                   </p>
                 </>
               )}
@@ -1769,24 +3064,55 @@ export default function CustomerDetails() {
 
         {/* RIGHT COLUMN */}
 
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           {/* CONTACT */}
 
           <Card className={cardClass}>
-            <SectionHeader icon={UserRound} title="Contact details" description="How to reach this customer." />
+            <div className="flex items-center justify-between gap-3 border-b border-[#eae7f4] px-5 py-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full border-2 border-white bg-violet-100 shadow-sm ring-1 ring-violet-100">
+                  {getCustomerPhotoUrl(customer.photo_url) ? (
+                    <img
+                      src={getCustomerPhotoUrl(customer.photo_url)}
+                      alt={`${customer.name} profile`}
+                      className="h-full w-full object-cover"
+                      onError={(event) => { event.currentTarget.style.display = "none" }}
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-sm font-bold text-violet-700">
+                      {getInitials(customer.name)}
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <h2 className="truncate text-[16px] font-bold tracking-tight text-[#171a36]">Customer details</h2>
+                  <p className="mt-0.5 truncate text-xs text-slate-500">{customer.name || "Customer profile"}</p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => customerForm.openEdit(customer)}
+                className="h-9 shrink-0 gap-2 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50 hover:text-violet-800"
+              >
+                <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                Edit
+              </Button>
+            </div>
 
             <CardContent className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-1">
               <DetailRow label="Mobile number" value={customer.mobile} icon={Phone} />
               <DetailRow label="WhatsApp" value={customer.whatsapp} icon={MessageCircle} />
-              <DetailRow
-                label="Customer type"
-                value={customer.customer_type || "Individual"}
-                icon={Building2}
-              />
+              <DetailRow label="Customer type" value={customer.customer_type || "Individual"} icon={Building2} />
               <DetailRow label="GSTIN" value={customer.gstin} icon={FileText} />
               <div className="sm:col-span-2 xl:col-span-1">
                 <DetailRow label="Address" value={address} icon={MapPin} />
               </div>
+              {customer.notes ? (
+                <div className="sm:col-span-2 xl:col-span-1">
+                  <DetailRow label="Notes" value={customer.notes} icon={FileText} />
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -1913,6 +3239,7 @@ export default function CustomerDetails() {
             : "Not updated yet"}
         </span>
       </footer>
+      <CustomerFormDialog ctl={customerForm} />
     </div>
   )
 }

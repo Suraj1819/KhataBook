@@ -75,10 +75,10 @@ import { toast } from "sonner"
 const ATTACHMENT_BUCKET = "bill_attachments"
 
 const cardClass =
-  "overflow-hidden rounded-[20px] border border-white/80 bg-white/85 shadow-[0_5px_18px_rgba(80,65,130,0.07)] backdrop-blur-sm"
+  "overflow-hidden rounded-[20px] border border-white/80 dark:border-slate-700 bg-white/85 dark:bg-slate-900/85 shadow-[0_5px_18px_rgba(80,65,130,0.07)] backdrop-blur-sm"
 
 const fieldClass =
-  "h-11 rounded-xl border-violet-100 bg-white text-sm shadow-none transition-colors placeholder:text-slate-400 focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/20"
+  "h-11 rounded-xl border-violet-100 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm shadow-none transition-colors placeholder:text-slate-400 focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/20"
 
 const num = (value) => Number(value) || 0
 const round2 = (value) => Math.round(num(value) * 100) / 100
@@ -216,13 +216,13 @@ function amountInWords(amount) {
 ================================================== */
 
 function Skeleton({ className = "" }) {
-  return <div className={`animate-pulse rounded-lg bg-slate-200/70 ${className}`} />
+  return <div className={`animate-pulse rounded-lg bg-slate-200/70 dark:bg-slate-800 ${className}`} />
 }
 
 function PageSkeleton() {
   return (
     <div
-      className="min-h-full w-full space-y-4 rounded-2xl bg-[#f7f5ff] px-3 py-5 sm:px-5 lg:px-6"
+      className="min-h-full w-full space-y-4 rounded-2xl bg-[#f7f5ff] dark:bg-slate-950 px-3 py-5 sm:px-5 lg:px-6"
       aria-busy="true"
       aria-label="Loading bill"
     >
@@ -241,24 +241,24 @@ function PageSkeleton() {
 }
 
 const TONES = {
-  green: "bg-emerald-100/80 text-emerald-700",
-  blue: "bg-blue-100/80 text-blue-700",
-  pink: "bg-pink-100/80 text-pink-700",
-  purple: "bg-violet-100/80 text-violet-700",
-  amber: "bg-amber-100/80 text-amber-700",
+  green: "bg-emerald-100/80 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300",
+  blue: "bg-blue-100/80 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300",
+  pink: "bg-pink-100/80 dark:bg-pink-950/50 text-pink-700 dark:text-pink-300",
+  purple: "bg-violet-100/80 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300",
+  amber: "bg-amber-100/80 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300",
 }
 
 const ACCENTS = {
-  green: "text-emerald-700",
-  blue: "text-blue-700",
-  pink: "text-pink-700",
-  purple: "text-violet-700",
-  amber: "text-amber-700",
+  green: "text-emerald-700 dark:text-emerald-300",
+  blue: "text-blue-700 dark:text-blue-300",
+  pink: "text-pink-700 dark:text-pink-300",
+  purple: "text-violet-700 dark:text-violet-300",
+  amber: "text-amber-700 dark:text-amber-300",
 }
 
-function SummaryCard({ label, value, detail, icon: Icon, tone = "green", valueClass = "text-[#151934]", children }) {
+function SummaryCard({ label, value, detail, icon: Icon, tone = "green", valueClass = "text-[#151934] dark:text-slate-100", children }) {
   return (
-    <Card className="overflow-hidden rounded-[20px] border border-white/80 bg-white/80 shadow-[0_4px_15px_rgba(80,65,130,0.07)] backdrop-blur-sm">
+    <Card className="overflow-hidden rounded-[20px] border border-white/80 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 shadow-[0_4px_15px_rgba(80,65,130,0.07)] backdrop-blur-sm">
       <CardContent className="p-4 sm:p-5">
         <div className="flex min-w-0 items-center gap-4">
           <div
@@ -268,7 +268,7 @@ function SummaryCard({ label, value, detail, icon: Icon, tone = "green", valueCl
           </div>
 
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[13px] font-medium text-slate-600">{label}</p>
+            <p className="truncate text-[13px] font-medium text-slate-600 dark:text-slate-300">{label}</p>
             <h3
               className={`mt-1.5 break-words text-[23px] font-bold leading-tight tracking-tight tabular-nums ${valueClass}`}
             >
@@ -285,15 +285,15 @@ function SummaryCard({ label, value, detail, icon: Icon, tone = "green", valueCl
 
 function SectionHeader({ icon: Icon, title, description, action }) {
   return (
-    <div className="flex flex-col items-stretch gap-3 border-b border-[#eae7f4] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-5">
+    <div className="flex flex-col items-stretch gap-3 border-b border-[#eae7f4] dark:border-slate-700 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-5">
       <div className="flex min-w-0 items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300">
           <Icon className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
         </div>
 
         <div className="min-w-0">
-          <h2 className="whitespace-nowrap text-[16px] font-bold tracking-tight text-[#171a36]">{title}</h2>
-          {description && <p className="mt-0.5 text-xs text-slate-500">{description}</p>}
+          <h2 className="whitespace-nowrap text-[16px] font-bold tracking-tight text-[#171a36] dark:text-slate-100">{title}</h2>
+          {description && <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{description}</p>}
         </div>
       </div>
 
@@ -312,9 +312,9 @@ function Panel({ icon, title, description, action, children, className = "" }) {
 }
 
 const STATUS_STYLES = {
-  paid: { label: "Paid", className: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: CheckCircle2 },
-  partial: { label: "Partially paid", className: "bg-amber-100 text-amber-700 border-amber-200", icon: Clock3 },
-  unpaid: { label: "Unpaid", className: "bg-rose-100 text-rose-700 border-rose-200", icon: CircleAlert },
+  paid: { label: "Paid", className: "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800", icon: CheckCircle2 },
+  partial: { label: "Partially paid", className: "bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-900/60", icon: Clock3 },
+  unpaid: { label: "Unpaid", className: "bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-900/60", icon: CircleAlert },
   overdue: { label: "Overdue", className: "bg-rose-600 text-white border-rose-600", icon: AlertCircle },
 }
 
@@ -334,11 +334,11 @@ function StatusPill({ status }) {
 function EmptyState({ icon: Icon, title, description }) {
   return (
     <div className="flex min-h-[180px] flex-col items-center justify-center px-5 py-8 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-50 text-violet-600">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-50 dark:bg-violet-950/30 text-violet-600 dark:text-violet-300">
         <Icon className="h-7 w-7" aria-hidden="true" />
       </div>
-      <h3 className="mt-4 text-sm font-bold text-slate-900">{title}</h3>
-      {description && <p className="mt-1 max-w-xs text-xs leading-5 text-slate-500">{description}</p>}
+      <h3 className="mt-4 text-sm font-bold text-slate-900 dark:text-slate-100">{title}</h3>
+      {description && <p className="mt-1 max-w-xs text-xs leading-5 text-slate-500 dark:text-slate-400">{description}</p>}
     </div>
   )
 }
@@ -347,9 +347,9 @@ function ErrorBanner({ message, onRetry }) {
   return (
     <div
       role="alert"
-      className="flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3"
+      className="flex items-center justify-between gap-3 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/30 px-4 py-3"
     >
-      <div className="flex items-center gap-2 text-sm text-rose-700">
+      <div className="flex items-center gap-2 text-sm text-rose-700 dark:text-rose-300">
         <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
         <span>
           Could not load your latest figures. Check your connection and try again.
@@ -357,17 +357,17 @@ function ErrorBanner({ message, onRetry }) {
         </span>
       </div>
 
-      <Button size="sm" variant="outline" onClick={onRetry} className="shrink-0 border-rose-200 bg-white shadow-sm">
+      <Button size="sm" variant="outline" onClick={onRetry} className="shrink-0 border-rose-200 dark:border-rose-900/60 bg-white dark:bg-slate-900 shadow-sm">
         Try again
       </Button>
     </div>
   )
 }
 
-function AmountRow({ label, value, valueClass = "text-slate-800", bold = false }) {
+function AmountRow({ label, value, valueClass = "text-slate-800 dark:text-slate-200", bold = false }) {
   return (
     <div className="flex items-center justify-between gap-6 py-1.5 text-sm">
-      <span className={bold ? "font-bold text-slate-900" : "text-slate-600"}>{label}</span>
+      <span className={bold ? "font-bold text-slate-900 dark:text-slate-100" : "text-slate-600 dark:text-slate-300"}>{label}</span>
       <span className={`tabular-nums ${bold ? "font-bold" : "font-semibold"} ${valueClass}`}>{value}</span>
     </div>
   )
@@ -377,16 +377,16 @@ function InfoRow({ label, children }) {
   if (children === null || children === undefined || children === "") return null
   return (
     <div className="flex items-start justify-between gap-4 py-3">
-      <dt className="text-[13px] text-slate-500">{label}</dt>
-      <dd className="text-right text-[13px] font-semibold text-slate-800">{children}</dd>
+      <dt className="text-[13px] text-slate-500 dark:text-slate-400">{label}</dt>
+      <dd className="text-right text-[13px] font-semibold text-slate-800 dark:text-slate-200">{children}</dd>
     </div>
   )
 }
 
 function ContactLine({ icon: Icon, children, align = "center" }) {
   return (
-    <div className={`flex ${align === "start" ? "items-start" : "items-center"} gap-3 text-sm text-slate-600`}>
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-50 text-violet-700">
+    <div className={`flex ${align === "start" ? "items-start" : "items-center"} gap-3 text-sm text-slate-600 dark:text-slate-300`}>
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-300">
         <Icon className="h-4 w-4" aria-hidden="true" />
       </span>
       <span className="min-w-0 break-words">{children}</span>
@@ -394,7 +394,7 @@ function ContactLine({ icon: Icon, children, align = "center" }) {
   )
 }
 
-function Avatar({ name, className = "bg-violet-100 text-violet-700" }) {
+function Avatar({ name, className = "bg-violet-100 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300" }) {
   return (
     <div
       aria-hidden="true"
@@ -440,7 +440,7 @@ function PageHeader({
   }).format(new Date())
 
   const actionButtonClass =
-    "inline-flex h-11 w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-violet-200 bg-white px-3 text-sm font-medium leading-none text-slate-700 shadow-sm transition-all duration-200 hover:-translate-y-px hover:border-violet-300 hover:bg-violet-50 hover:text-violet-800 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60 sm:w-auto sm:px-4"
+    "inline-flex h-11 w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm font-medium leading-none text-slate-700 dark:text-slate-300 shadow-sm transition-all duration-200 hover:-translate-y-px hover:border-violet-300 dark:hover:border-slate-500 hover:bg-violet-50 dark:hover:bg-slate-800 hover:text-violet-800 dark:hover:text-violet-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60 sm:w-auto sm:px-4"
 
   return (
     <header className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -450,7 +450,7 @@ function PageHeader({
           variant="outline"
           size="icon"
           aria-label="Back to bills"
-          className="mt-1 h-11 w-11 shrink-0 rounded-xl border border-violet-200 bg-white shadow-sm transition-all hover:-translate-y-px hover:border-violet-300 hover:bg-violet-50 hover:shadow-md"
+          className="mt-1 h-11 w-11 shrink-0 rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm transition-all hover:-translate-y-px hover:border-violet-300 dark:hover:border-slate-500 hover:bg-violet-50 dark:hover:bg-slate-800 hover:shadow-md"
         >
           <Link to="/bills">
             <ArrowLeft className="h-4 w-4" />
@@ -460,11 +460,11 @@ function PageHeader({
         <div className="min-w-0 flex-1">
           <nav
             aria-label="Breadcrumb"
-            className="mb-1 hidden min-w-0 items-center gap-1.5 overflow-hidden text-xs font-medium text-slate-500 sm:flex"
+            className="mb-1 hidden min-w-0 items-center gap-1.5 overflow-hidden text-xs font-medium text-slate-500 dark:text-slate-400 sm:flex"
           >
             <span className="max-w-[140px] truncate">{shopName || "Workspace"}</span>
             <ChevronRight className="h-3 w-3 shrink-0" aria-hidden="true" />
-            <Link to="/bills" className="shrink-0 transition-colors hover:text-slate-800">
+            <Link to="/bills" className="shrink-0 transition-colors hover:text-slate-800 dark:hover:text-slate-100">
               Bills
             </Link>
             <ChevronRight className="h-3 w-3 shrink-0" aria-hidden="true" />
@@ -472,7 +472,7 @@ function PageHeader({
           </nav>
 
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <h1 className="max-w-full truncate text-xl font-bold leading-tight tracking-tight text-[#171a39] sm:text-[30px]">
+            <h1 className="max-w-full truncate text-xl font-bold leading-tight tracking-tight text-[#171a39] dark:text-slate-100 sm:text-[30px]">
               {bill.bill_number || "Bill details"}
             </h1>
             <StatusPill status={status} />
@@ -481,7 +481,7 @@ function PageHeader({
               <button
                 type="button"
                 onClick={copyBillNumber}
-                className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
+                className="shrink-0 rounded-lg p-1.5 text-slate-400 dark:text-slate-500 transition-colors hover:bg-white dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
                 aria-label="Copy bill number"
                 title="Copy bill number"
               >
@@ -490,18 +490,18 @@ function PageHeader({
             )}
           </div>
 
-          <p className="mt-1 break-words text-xs leading-5 text-slate-600 sm:text-sm">
+          <p className="mt-1 break-words text-xs leading-5 text-slate-600 dark:text-slate-300 sm:text-sm">
             {bill.bill_date ? (
               <>
                 Issued on{" "}
-                <strong className="font-semibold text-slate-800">{formatDate(bill.bill_date)}</strong>
+                <strong className="font-semibold text-slate-800 dark:text-slate-200">{formatDate(bill.bill_date)}</strong>
               </>
             ) : (
               "Bill information, customer details and payment records"
             )}
             {customer.name && (
               <>
-                {" "}for <strong className="font-semibold text-slate-800">{customer.name}</strong>
+                {" "}for <strong className="font-semibold text-slate-800 dark:text-slate-200">{customer.name}</strong>
               </>
             )}
             .
@@ -511,7 +511,7 @@ function PageHeader({
 
       <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center lg:w-auto lg:justify-end">
         <div
-          className="col-span-2 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-violet-200 bg-white px-3 text-sm font-medium leading-none text-slate-700 shadow-sm sm:col-span-1 sm:w-auto sm:px-4"
+          className="col-span-2 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm font-medium leading-none text-slate-700 dark:text-slate-300 shadow-sm sm:col-span-1 sm:w-auto sm:px-4"
           aria-label={`Today, ${currentDateLabel}`}
           title={`Today, ${currentDateLabel}`}
         >
@@ -550,7 +550,7 @@ function PageHeader({
           variant="outline"
           onClick={onShareInvoice}
           disabled={sharingInvoice}
-          className={`${actionButtonClass} col-span-2 border-emerald-200 text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 sm:col-span-1`}
+          className={`${actionButtonClass} col-span-2 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-800 dark:hover:text-emerald-300 sm:col-span-1`}
         >
           {sharingInvoice ? (
             <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
@@ -591,7 +591,7 @@ function ItemsCard({ bill, items, onExportCSV, onExportPDF }) {
             type="button"
             variant="outline"
             onClick={onExportCSV}
-            className="h-9 min-w-0 flex-1 gap-1.5 rounded-xl border border-violet-200 bg-white px-2 text-xs font-medium text-slate-700 shadow-sm transition-all hover:-translate-y-px hover:bg-violet-50 hover:text-violet-800 hover:shadow-md sm:flex-none sm:px-3"
+            className="h-9 min-w-0 flex-1 gap-1.5 rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 text-xs font-medium text-slate-700 dark:text-slate-300 shadow-sm transition-all hover:-translate-y-px hover:bg-violet-50 dark:hover:bg-slate-800 hover:text-violet-800 dark:hover:text-violet-300 hover:shadow-md sm:flex-none sm:px-3"
           >
             <FileSpreadsheet className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span>Export CSV</span>
@@ -600,7 +600,7 @@ function ItemsCard({ bill, items, onExportCSV, onExportPDF }) {
             type="button"
             variant="outline"
             onClick={onExportPDF}
-            className="h-9 min-w-0 flex-1 gap-1.5 rounded-xl border border-violet-200 bg-white px-2 text-xs font-medium text-slate-700 shadow-sm transition-all hover:-translate-y-px hover:bg-violet-50 hover:text-violet-800 hover:shadow-md sm:flex-none sm:px-3"
+            className="h-9 min-w-0 flex-1 gap-1.5 rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 text-xs font-medium text-slate-700 dark:text-slate-300 shadow-sm transition-all hover:-translate-y-px hover:bg-violet-50 dark:hover:bg-slate-800 hover:text-violet-800 dark:hover:text-violet-300 hover:shadow-md sm:flex-none sm:px-3"
           >
             <Download className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span>Export PDF</span>
@@ -625,7 +625,7 @@ function ItemsCard({ bill, items, onExportCSV, onExportPDF }) {
             <table className="w-full min-w-[760px] text-left">
               <caption className="sr-only">Items in {bill.bill_number}</caption>
               <thead>
-                <tr className="bg-[#f5f3fc] text-[11px] font-semibold text-slate-600">
+                <tr className="bg-[#f5f3fc] dark:bg-slate-800 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
                   <th scope="col" className="w-12 rounded-l-xl px-3 py-3">#</th>
                   <th scope="col" className="px-3 py-3">Item</th>
                   <th scope="col" className="px-3 py-3 text-right">Qty</th>
@@ -641,38 +641,38 @@ function ItemsCard({ bill, items, onExportCSV, onExportPDF }) {
                 {items.map((item, index) => (
                   <tr
                     key={item.id || index}
-                    className="border-b border-[#eeecf5] transition-colors last:border-0 hover:bg-[#f9f8ff]"
+                    className="border-b border-[#eeecf5] dark:border-slate-700 transition-colors last:border-0 hover:bg-[#f9f8ff] dark:hover:bg-slate-800"
                   >
                     <td className="px-3 py-3">
-                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-violet-100 text-[11px] font-bold text-violet-700">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-violet-100 dark:bg-violet-950/50 text-[11px] font-bold text-violet-700 dark:text-violet-300">
                         {index + 1}
                       </span>
                     </td>
                     <td className="px-3 py-3">
-                      <p className="text-xs font-bold text-slate-800">{item.item_name || "Item"}</p>
+                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{item.item_name || "Item"}</p>
                       {item.description && (
-                        <p className="mt-0.5 max-w-xs text-[11px] text-slate-500">{item.description}</p>
+                        <p className="mt-0.5 max-w-xs text-[11px] text-slate-500 dark:text-slate-400">{item.description}</p>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-3 text-right text-xs tabular-nums text-slate-600">
+                    <td className="whitespace-nowrap px-3 py-3 text-right text-xs tabular-nums text-slate-600 dark:text-slate-300">
                       {num(item.quantity)} {item.unit || ""}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-3 text-right text-xs tabular-nums text-slate-600">
+                    <td className="whitespace-nowrap px-3 py-3 text-right text-xs tabular-nums text-slate-600 dark:text-slate-300">
                       {formatCurrency(item.rate)}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-3 text-right text-xs tabular-nums text-slate-600">
+                    <td className="whitespace-nowrap px-3 py-3 text-right text-xs tabular-nums text-slate-600 dark:text-slate-300">
                       {num(item.discount) > 0 ? `-${formatCurrency(item.discount)}` : "—"}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-3 text-right text-xs tabular-nums text-slate-600">
+                    <td className="whitespace-nowrap px-3 py-3 text-right text-xs tabular-nums text-slate-600 dark:text-slate-300">
                       {formatCurrency(item.taxable_amount)}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-3 text-right text-xs tabular-nums text-slate-600">
+                    <td className="whitespace-nowrap px-3 py-3 text-right text-xs tabular-nums text-slate-600 dark:text-slate-300">
                       {num(item.gst_percent)}%
-                      <span className="mt-0.5 block text-[11px] text-slate-400">
+                      <span className="mt-0.5 block text-[11px] text-slate-400 dark:text-slate-500">
                         {formatCurrency(item.gst_amount)}
                       </span>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-3 text-right text-xs font-bold tabular-nums text-slate-900">
+                    <td className="whitespace-nowrap px-3 py-3 text-right text-xs font-bold tabular-nums text-slate-900 dark:text-slate-100">
                       {formatCurrency(item.total_amount)}
                     </td>
                   </tr>
@@ -680,18 +680,18 @@ function ItemsCard({ bill, items, onExportCSV, onExportPDF }) {
               </tbody>
 
               <tfoot>
-                <tr className="border-t border-[#eae7f4] bg-[#faf9ff]">
+                <tr className="border-t border-[#eae7f4] dark:border-slate-700 bg-[#faf9ff] dark:bg-slate-800/70">
                   <td className="px-3 py-3.5" />
-                  <td className="px-3 py-3.5 text-xs font-bold text-slate-700">Total</td>
-                  <td className="px-3 py-3.5 text-right text-xs font-bold tabular-nums text-slate-700">
+                  <td className="px-3 py-3.5 text-xs font-bold text-slate-700 dark:text-slate-300">Total</td>
+                  <td className="px-3 py-3.5 text-right text-xs font-bold tabular-nums text-slate-700 dark:text-slate-300">
                     {totalQty}
                   </td>
                   <td colSpan={2} />
-                  <td className="px-3 py-3.5 text-right text-xs font-bold tabular-nums text-slate-700">
+                  <td className="px-3 py-3.5 text-right text-xs font-bold tabular-nums text-slate-700 dark:text-slate-300">
                     {formatCurrency(itemsTaxable)}
                   </td>
                   <td />
-                  <td className="px-3 py-3.5 text-right text-sm font-bold tabular-nums text-slate-950">
+                  <td className="px-3 py-3.5 text-right text-sm font-bold tabular-nums text-slate-950 dark:text-slate-50">
                     {formatCurrency(itemsTotal)}
                   </td>
                 </tr>
@@ -700,29 +700,29 @@ function ItemsCard({ bill, items, onExportCSV, onExportPDF }) {
           </div>
 
           {/* Mobile */}
-          <div className="divide-y divide-[#eeecf5] md:hidden">
+          <div className="divide-y divide-[#eeecf5] dark:divide-slate-800 md:hidden">
             {items.map((item, index) => (
               <div key={item.id || index} className="space-y-3 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-2.5">
-                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-100 text-[11px] font-bold text-violet-700">
+                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-100 dark:bg-violet-950/50 text-[11px] font-bold text-violet-700 dark:text-violet-300">
                       {index + 1}
                     </span>
                     <div className="min-w-0">
-                      <p className="break-words text-sm font-bold text-slate-900">
+                      <p className="break-words text-sm font-bold text-slate-900 dark:text-slate-100">
                         {item.item_name || "Item"}
                       </p>
                       {item.description && (
-                        <p className="mt-0.5 text-xs text-slate-500">{item.description}</p>
+                        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{item.description}</p>
                       )}
                     </div>
                   </div>
-                  <p className="shrink-0 text-sm font-bold tabular-nums text-slate-900">
+                  <p className="shrink-0 text-sm font-bold tabular-nums text-slate-900 dark:text-slate-100">
                     {formatCurrency(item.total_amount)}
                   </p>
                 </div>
 
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl border border-[#ece9f5] bg-[#faf9ff] p-3">
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl border border-[#ece9f5] dark:border-slate-700 bg-[#faf9ff] dark:bg-slate-800/70 p-3">
                   {[
                     ["Quantity", `${num(item.quantity)} ${item.unit || ""}`],
                     ["Rate", formatCurrency(item.rate)],
@@ -731,17 +731,17 @@ function ItemsCard({ bill, items, onExportCSV, onExportPDF }) {
                     ["GST", `${num(item.gst_percent)}% · ${formatCurrency(item.gst_amount)}`],
                   ].map(([label, value]) => (
                     <div key={label}>
-                      <dt className="text-[11px] text-slate-500">{label}</dt>
-                      <dd className="mt-0.5 text-xs font-semibold text-slate-700">{value}</dd>
+                      <dt className="text-[11px] text-slate-500 dark:text-slate-400">{label}</dt>
+                      <dd className="mt-0.5 text-xs font-semibold text-slate-700 dark:text-slate-300">{value}</dd>
                     </div>
                   ))}
                 </dl>
               </div>
             ))}
 
-            <div className="flex items-center justify-between bg-[#faf9ff] px-4 py-3.5">
-              <span className="text-xs font-bold text-slate-700">Total ({totalQty} qty)</span>
-              <span className="text-sm font-bold tabular-nums text-slate-950">
+            <div className="flex items-center justify-between bg-[#faf9ff] dark:bg-slate-800/70 px-4 py-3.5">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Total ({totalQty} qty)</span>
+              <span className="text-sm font-bold tabular-nums text-slate-950 dark:text-slate-50">
                 {formatCurrency(itemsTotal)}
               </span>
             </div>
@@ -756,7 +756,7 @@ function AmountBreakdownCard({ bill, totals }) {
   return (
     <Panel icon={IndianRupee} title="Amount breakdown" description="How the final amount is calculated">
       <CardContent className="space-y-4 p-5">
-        <div className="divide-y divide-[#eeecf5]">
+        <div className="divide-y divide-[#eeecf5] dark:divide-slate-800">
           <div className="pb-2">
             <AmountRow label="Subtotal" value={formatCurrency(bill.subtotal)} />
             {num(bill.discount_amount) > 0 && (
@@ -780,18 +780,18 @@ function AmountBreakdownCard({ bill, totals }) {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+        <div className="rounded-2xl border border-emerald-100 dark:border-emerald-900/60 bg-emerald-50/70 dark:bg-emerald-950/30 p-4">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-sm font-semibold text-emerald-800">Grand total</span>
-            <span className="text-2xl font-extrabold tracking-tight tabular-nums text-slate-900">
+            <span className="text-sm font-semibold text-emerald-800 dark:text-emerald-200">Grand total</span>
+            <span className="text-2xl font-extrabold tracking-tight tabular-nums text-slate-900 dark:text-slate-100">
               {formatCurrency(totals.grandTotal)}
             </span>
           </div>
         </div>
 
-        <div className="rounded-xl border border-dashed border-violet-200 bg-[#faf9ff] px-4 py-3">
-          <p className="text-[11px] font-semibold text-slate-500">Amount in words</p>
-          <p className="mt-1 text-sm font-medium leading-5 text-slate-800">
+        <div className="rounded-xl border border-dashed border-violet-200 dark:border-slate-700 bg-[#faf9ff] dark:bg-slate-800/70 px-4 py-3">
+          <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Amount in words</p>
+          <p className="mt-1 text-sm font-medium leading-5 text-slate-800 dark:text-slate-200">
             {amountInWords(totals.grandTotal)}
           </p>
         </div>
@@ -802,10 +802,10 @@ function AmountBreakdownCard({ bill, totals }) {
 
 function PaymentSummaryCard({ totals, isFullyPaid, dueInfo, onRecordPayment }) {
   const dueText = {
-    slate: "text-slate-500",
-    emerald: "text-emerald-700",
-    amber: "text-amber-700",
-    red: "text-rose-700",
+    slate: "text-slate-500 dark:text-slate-400",
+    emerald: "text-emerald-700 dark:text-emerald-300",
+    amber: "text-amber-700 dark:text-amber-300",
+    red: "text-rose-700 dark:text-rose-300",
   }[dueInfo.tone]
 
   return (
@@ -829,16 +829,16 @@ function PaymentSummaryCard({ totals, isFullyPaid, dueInfo, onRecordPayment }) {
 
         <div
           className={`rounded-2xl border p-4 ${
-            isFullyPaid ? "border-emerald-100 bg-emerald-50/70" : "border-rose-100 bg-rose-50/70"
+            isFullyPaid ? "border-emerald-100 dark:border-emerald-900/60 bg-emerald-50/70 dark:bg-emerald-950/30" : "border-rose-100 dark:border-rose-900/60 bg-rose-50/70 dark:bg-rose-950/30"
           }`}
         >
           <div className="flex items-center justify-between gap-3">
-            <span className={`text-sm font-semibold ${isFullyPaid ? "text-emerald-800" : "text-rose-700"}`}>
+            <span className={`text-sm font-semibold ${isFullyPaid ? "text-emerald-800 dark:text-emerald-200" : "text-rose-700 dark:text-rose-300"}`}>
               Balance due
             </span>
             <span
               className={`text-2xl font-extrabold tracking-tight tabular-nums ${
-                isFullyPaid ? "text-emerald-700" : "text-rose-600"
+                isFullyPaid ? "text-emerald-700 dark:text-emerald-300" : "text-rose-600 dark:text-rose-300"
               }`}
             >
               {formatCurrency(totals.amountDue)}
@@ -856,11 +856,11 @@ function PaymentSummaryCard({ totals, isFullyPaid, dueInfo, onRecordPayment }) {
 
         <div>
           <div className="mb-1.5 flex items-center justify-between text-xs">
-            <span className="font-medium text-slate-600">Collected</span>
-            <span className="font-bold tabular-nums text-slate-800">{Math.round(totals.paidPercent)}%</span>
+            <span className="font-medium text-slate-600 dark:text-slate-300">Collected</span>
+            <span className="font-bold tabular-nums text-slate-800 dark:text-slate-200">{Math.round(totals.paidPercent)}%</span>
           </div>
           <div
-            className="h-2.5 overflow-hidden rounded-full bg-rose-100"
+            className="h-2.5 overflow-hidden rounded-full bg-rose-100 dark:bg-rose-950/50"
             role="progressbar"
             aria-label="Amount collected"
             aria-valuemin={0}
@@ -878,7 +878,7 @@ function PaymentSummaryCard({ totals, isFullyPaid, dueInfo, onRecordPayment }) {
           <Button
             type="button"
             onClick={onRecordPayment}
-            className="h-11 w-full gap-2 rounded-xl border border-violet-200 bg-white font-semibold text-slate-700 shadow-sm hover:bg-violet-50"
+            className="h-11 w-full gap-2 rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-semibold text-slate-700 dark:text-slate-300 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-800"
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
             Record payment
@@ -1312,10 +1312,10 @@ function PaymentHistoryCard({ bill, payments, advanceAllocations = [], totals, i
   }
 
   const dotStyles = {
-    issued: "border-slate-300 bg-white",
-    advance: "border-blue-300 bg-blue-100",
-    payment: "border-emerald-500 bg-emerald-100",
-    refund: "border-rose-400 bg-rose-100",
+    issued: "border-slate-300 bg-white dark:bg-slate-900",
+    advance: "border-blue-300 bg-blue-100 dark:bg-blue-950/50",
+    payment: "border-emerald-500 bg-emerald-100 dark:bg-emerald-950/50",
+    refund: "border-rose-400 bg-rose-100 dark:bg-rose-950/50",
   }
 
   return (
@@ -1330,7 +1330,7 @@ function PaymentHistoryCard({ bill, payments, advanceAllocations = [], totals, i
             variant="outline"
             size="sm"
             onClick={exportHistoryCSV}
-            className="h-9 shrink-0 gap-1.5 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50"
+            className="h-9 shrink-0 gap-1.5 rounded-xl border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold text-slate-700 dark:text-slate-300 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-800"
             title="Export payment history as CSV"
           >
             <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
@@ -1341,7 +1341,7 @@ function PaymentHistoryCard({ bill, payments, advanceAllocations = [], totals, i
             variant="outline"
             size="sm"
             onClick={exportHistoryPDF}
-            className="h-9 shrink-0 gap-1.5 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-violet-50"
+            className="h-9 shrink-0 gap-1.5 rounded-xl border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold text-slate-700 dark:text-slate-300 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-800"
             title="Export payment history as PDF"
           >
             <FileDown className="h-4 w-4" aria-hidden="true" />
@@ -1353,7 +1353,7 @@ function PaymentHistoryCard({ bill, payments, advanceAllocations = [], totals, i
               variant="outline"
               size="sm"
               onClick={onAddPayment}
-              className="h-9 shrink-0 gap-2 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm hover:bg-violet-50"
+              className="h-9 shrink-0 gap-2 rounded-xl border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold text-slate-800 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-800"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               Add payment
@@ -1366,7 +1366,7 @@ function PaymentHistoryCard({ bill, payments, advanceAllocations = [], totals, i
         {events.map((event, index) => (
           <li key={event.key} className="relative flex gap-4 pb-6">
             {(index < events.length - 1 || !isFullyPaid) && (
-              <span className="absolute left-[7px] top-4 h-full w-px bg-[#e4e0f2]" aria-hidden="true" />
+              <span className="absolute left-[7px] top-4 h-full w-px bg-[#e4e0f2] dark:bg-slate-700" aria-hidden="true" />
             )}
             <span
               className={`relative mt-1 h-[15px] w-[15px] shrink-0 rounded-full border-2 ${dotStyles[event.type]}`}
@@ -1374,8 +1374,8 @@ function PaymentHistoryCard({ bill, payments, advanceAllocations = [], totals, i
             />
             <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
-                <p className="text-sm font-bold text-slate-900">{event.title}</p>
-                <p className="mt-0.5 text-xs text-slate-500">
+                <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{event.title}</p>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                   {event.date ? formatDate(event.date) : "Date not available"}
                 </p>
               </div>
@@ -1383,17 +1383,17 @@ function PaymentHistoryCard({ bill, payments, advanceAllocations = [], totals, i
                 <p
                   className={`text-sm font-bold tabular-nums ${
                     event.type === "issued"
-                      ? "text-slate-900"
+                      ? "text-slate-900 dark:text-slate-100"
                       : event.type === "refund"
-                        ? "text-rose-600"
-                        : "text-emerald-700"
+                        ? "text-rose-600 dark:text-rose-300"
+                        : "text-emerald-700 dark:text-emerald-300"
                   }`}
                 >
                   {event.type === "issued" ? "" : event.type === "refund" ? "- " : "+ "}
                   {formatCurrency(event.amount)}
                 </p>
                 {event.type !== "issued" && (
-                  <p className="mt-0.5 text-xs text-slate-500">
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                     Balance after: {formatCurrency(event.balance)}
                   </p>
                 )}
@@ -1405,15 +1405,15 @@ function PaymentHistoryCard({ bill, payments, advanceAllocations = [], totals, i
         <li className="relative flex gap-4">
           <span
             className={`relative mt-1 h-[15px] w-[15px] shrink-0 rounded-full border-2 ${
-              isFullyPaid ? "border-emerald-600 bg-emerald-600" : "border-dashed border-slate-300 bg-white"
+              isFullyPaid ? "border-emerald-600 bg-emerald-600" : "border-dashed border-slate-300 bg-white dark:bg-slate-900"
             }`}
             aria-hidden="true"
           />
           <div>
-            <p className="text-sm font-bold text-slate-900">
+            <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
               {isFullyPaid ? "Bill settled" : `Balance pending: ${formatCurrency(totals.amountDue)}`}
             </p>
-            {!isFullyPaid && <p className="mt-0.5 text-xs text-slate-500">{dueInfo.text}</p>}
+            {!isFullyPaid && <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{dueInfo.text}</p>}
           </div>
         </li>
       </ol>
@@ -1487,7 +1487,7 @@ function CustomerCard({ bill, customer, shop, totals }) {
             asChild
             variant="outline"
             size="sm"
-            className="h-9 shrink-0 gap-1.5 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm hover:bg-violet-50"
+            className="h-9 shrink-0 gap-1.5 rounded-xl border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold text-slate-800 dark:text-slate-200 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-800"
           >
             <Link to={`/customers/${customer.id}`}>
               Account
@@ -1499,7 +1499,7 @@ function CustomerCard({ bill, customer, shop, totals }) {
     >
       <CardContent className="space-y-4 p-5">
         <div className="flex items-center gap-3">
-          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-violet-100 bg-violet-100 text-sm font-bold text-violet-700 shadow-sm">
+          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-violet-100 dark:border-slate-700 bg-violet-100 dark:bg-violet-950/50 text-sm font-bold text-violet-700 dark:text-violet-300 shadow-sm">
             {getInitials(customer.name)}
             {customerPhoto && !photoFailed && (
               <img
@@ -1513,10 +1513,10 @@ function CustomerCard({ bill, customer, shop, totals }) {
             )}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-base font-bold text-slate-900">
+            <p className="truncate text-base font-bold text-slate-900 dark:text-slate-100">
               {customer.name || "Walk-in customer"}
             </p>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               {customer.name ? customer.customer_type || "Registered customer" : "No customer linked"}
             </p>
           </div>
@@ -1531,7 +1531,7 @@ function CustomerCard({ bill, customer, shop, totals }) {
           )}
           {customer.gstin && <ContactLine icon={FileText}>GSTIN {customer.gstin}</ContactLine>}
           {!customer.mobile && !address && !customer.gstin && (
-            <p className="text-sm text-slate-400">No additional customer information available.</p>
+            <p className="text-sm text-slate-400 dark:text-slate-500">No additional customer information available.</p>
           )}
         </div>
 
@@ -1541,7 +1541,7 @@ function CustomerCard({ bill, customer, shop, totals }) {
               <Button
                 asChild
                 variant="outline"
-                className="h-10 gap-2 rounded-xl border-violet-200 bg-white text-sm font-semibold text-slate-700 hover:bg-violet-50 shadow-sm"
+                className="h-10 gap-2 rounded-xl border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-slate-800 shadow-sm"
               >
                 <a href={`tel:${customer.mobile}`}>
                   <Phone className="h-4 w-4" aria-hidden="true" />
@@ -1557,7 +1557,7 @@ function CustomerCard({ bill, customer, shop, totals }) {
               onClick={sendReminder}
               disabled={totals.amountDue <= 0}
               title={totals.amountDue <= 0 ? "No pending amount" : "Send payment reminder on WhatsApp"}
-              className="h-10 gap-2 rounded-xl border-violet-200 bg-white text-sm font-semibold text-slate-700 hover:bg-violet-50 disabled:opacity-50 shadow-sm"
+              className="h-10 gap-2 rounded-xl border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-slate-800 disabled:opacity-50 shadow-sm"
             >
               <MessageCircle className="h-4 w-4" aria-hidden="true" />
               Remind
@@ -1607,7 +1607,7 @@ function ShopCard({ shop }) {
     <Panel icon={Store} title="Shop" description="Bill issued by">
       <CardContent className="space-y-4 p-5">
         <div className="flex items-center gap-3">
-          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-emerald-100 bg-emerald-100 text-sm font-bold text-emerald-700 shadow-sm">
+          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-emerald-100 dark:border-emerald-900/60 bg-emerald-100 dark:bg-emerald-950/50 text-sm font-bold text-emerald-700 dark:text-emerald-300 shadow-sm">
             {getInitials(shop?.name)}
             {shopPhoto && !photoFailed && (
               <img
@@ -1621,9 +1621,9 @@ function ShopCard({ shop }) {
             )}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-base font-bold text-slate-900">{shop.name || "Shop"}</p>
+            <p className="truncate text-base font-bold text-slate-900 dark:text-slate-100">{shop.name || "Shop"}</p>
             {shop.gstin && (
-              <span className="mt-1 inline-flex rounded-full border border-violet-100 bg-violet-50 px-2.5 py-0.5 text-[10px] font-bold text-violet-700">
+              <span className="mt-1 inline-flex rounded-full border border-violet-100 dark:border-slate-700 bg-violet-50 dark:bg-violet-950/30 px-2.5 py-0.5 text-[10px] font-bold text-violet-700 dark:text-violet-300">
                 GSTIN {shop.gstin}
               </span>
             )}
@@ -1638,7 +1638,7 @@ function ShopCard({ shop }) {
             </ContactLine>
           )}
           {!shop.mobile && !shop.address && !shop.gstin && (
-            <p className="text-sm text-slate-400">No additional shop information available.</p>
+            <p className="text-sm text-slate-400 dark:text-slate-500">No additional shop information available.</p>
           )}
         </div>
       </CardContent>
@@ -1648,15 +1648,15 @@ function ShopCard({ shop }) {
 
 function BillInfoCard({ bill, status, overdue, dueInfo }) {
   const dueTone = {
-    slate: "border-slate-200 bg-slate-100 text-slate-600",
-    emerald: "border-emerald-200 bg-emerald-100 text-emerald-700",
-    amber: "border-amber-200 bg-amber-100 text-amber-700",
-    red: "border-rose-200 bg-rose-100 text-rose-700",
+    slate: "border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300",
+    emerald: "border-emerald-200 dark:border-emerald-800 bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300",
+    amber: "border-amber-200 dark:border-amber-900/60 bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300",
+    red: "border-rose-200 dark:border-rose-900/60 bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300",
   }[dueInfo.tone]
 
   return (
     <Panel icon={Receipt} title="Bill information" description="Dates and tax settings">
-      <dl className="divide-y divide-[#eeecf5] px-5 py-1">
+      <dl className="divide-y divide-[#eeecf5] dark:divide-slate-800 px-5 py-1">
         <InfoRow label="Bill number">{bill.bill_number || "—"}</InfoRow>
         <InfoRow label="Bill date">{bill.bill_date ? formatDate(bill.bill_date) : "—"}</InfoRow>
         <InfoRow label="Due date">
@@ -1697,7 +1697,7 @@ function AttachmentCard({ url, deleting, onDelete, onPreview }) {
             variant="outline"
             size="sm"
             onClick={onPreview}
-            className="h-9 gap-1.5 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-violet-50 shadow-sm"
+            className="h-9 gap-1.5 rounded-xl border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-slate-800 shadow-sm"
           >
             <Eye className="h-3.5 w-3.5" aria-hidden="true" />
             Preview
@@ -1710,7 +1710,7 @@ function AttachmentCard({ url, deleting, onDelete, onPreview }) {
             disabled={deleting}
             aria-label="Delete attachment"
             title="Delete attachment"
-            className="h-9 w-9 rounded-xl text-rose-600 hover:bg-rose-50 hover:text-rose-700 shadow-sm"
+            className="h-9 w-9 rounded-xl text-rose-600 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300 shadow-sm"
           >
             {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
           </Button>
@@ -1722,20 +1722,20 @@ function AttachmentCard({ url, deleting, onDelete, onPreview }) {
           type="button"
           onClick={onPreview}
           aria-label="Preview attached bill"
-          className="group relative block w-full overflow-hidden rounded-2xl border border-[#ece9f5] bg-[#faf9ff] text-left transition-all hover:border-violet-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
+          className="group relative block w-full overflow-hidden rounded-2xl border border-[#ece9f5] dark:border-slate-700 bg-[#faf9ff] dark:bg-slate-800/70 text-left transition-all hover:border-violet-300 dark:hover:border-slate-500 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
         >
           <div className="flex aspect-[4/3] items-center justify-center overflow-hidden p-2">
             {isImageUrl(url) ? (
               <img src={url} alt="Attached bill" className="h-full w-full object-contain" />
             ) : (
-              <div className="flex flex-col items-center gap-2 text-slate-500">
+              <div className="flex flex-col items-center gap-2 text-slate-500 dark:text-slate-400">
                 <FileText className="h-10 w-10 text-violet-400" aria-hidden="true" />
                 <span className="text-sm font-semibold">PDF document</span>
               </div>
             )}
           </div>
           <div className="absolute inset-0 flex items-center justify-center bg-slate-900/40 opacity-0 transition-opacity group-hover:opacity-100">
-            <span className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 shadow-sm">
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100 shadow-sm">
               <Eye className="h-3.5 w-3.5" aria-hidden="true" />
               Preview
             </span>
@@ -1750,7 +1750,7 @@ function NotesCard({ notes }) {
   return (
     <Panel icon={NotebookText} title="Notes" description="Additional information for this bill">
       <CardContent className="p-5">
-        <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">{notes}</p>
+        <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600 dark:text-slate-300">{notes}</p>
       </CardContent>
     </Panel>
   )
@@ -1765,11 +1765,11 @@ function DeleteAttachmentDialog({ open, onOpenChange, deleting, onConfirm }) {
     <Dialog open={open} onOpenChange={(next) => !deleting && onOpenChange(next)}>
       <DialogContent className="max-w-sm rounded-[20px] p-6">
         <div className="flex flex-col items-center text-center">
-          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-600">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-950/50 text-rose-600 dark:text-rose-300">
             <AlertTriangle className="h-6 w-6" aria-hidden="true" />
           </div>
-          <DialogTitle className="text-lg font-bold text-[#171a36]">Delete attachment?</DialogTitle>
-          <DialogDescription className="mt-2 text-sm text-slate-500">
+          <DialogTitle className="text-lg font-bold text-[#171a36] dark:text-slate-100">Delete attachment?</DialogTitle>
+          <DialogDescription className="mt-2 text-sm text-slate-500 dark:text-slate-400">
             The attached bill file will be permanently removed from storage. This cannot be undone.
           </DialogDescription>
         </div>
@@ -1779,7 +1779,7 @@ function DeleteAttachmentDialog({ open, onOpenChange, deleting, onConfirm }) {
             variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={deleting}
-            className="h-11 w-full rounded-xl border-violet-200 bg-white hover:bg-violet-50 sm:w-auto"
+            className="h-11 w-full rounded-xl border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-violet-50 dark:hover:bg-slate-800 sm:w-auto"
           >
             Cancel
           </Button>
@@ -1878,16 +1878,16 @@ function RecordPaymentDialog({ open, onClose, bill, status, customer, totals, to
   return (
     <Dialog open={open} onOpenChange={(next) => !next && !saving && onClose()}>
       <DialogContent className="max-h-[92vh] gap-0 overflow-hidden rounded-[20px] border-0 p-0 shadow-[0_12px_32px_rgba(80,65,130,0.25)] sm:max-w-md">
-        <DialogHeader className="border-b border-[#eae7f4] bg-[#f7f5ff] px-6 pb-5 pt-6 text-left">
+        <DialogHeader className="border-b border-[#eae7f4] dark:border-slate-700 bg-[#f7f5ff] dark:bg-slate-950 px-6 pb-5 pt-6 text-left">
           <div className="flex items-start gap-4 pr-6">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-700 text-white shadow-sm">
               <ArrowDownLeft className="h-5 w-5" aria-hidden="true" />
             </div>
             <div>
-              <DialogTitle className="text-lg font-bold tracking-tight text-[#171a36]">
+              <DialogTitle className="text-lg font-bold tracking-tight text-[#171a36] dark:text-slate-100">
                 Record payment
               </DialogTitle>
-              <DialogDescription className="mt-1 text-sm text-slate-600">
+              <DialogDescription className="mt-1 text-sm text-slate-600 dark:text-slate-300">
                 Add a payment against this bill.
               </DialogDescription>
             </div>
@@ -1895,35 +1895,35 @@ function RecordPaymentDialog({ open, onClose, bill, status, customer, totals, to
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex max-h-[calc(92vh-110px)] flex-col">
-          <div className="flex-1 space-y-5 overflow-y-auto bg-white px-6 py-6">
-            <div className="rounded-2xl border border-[#ece9f5] bg-[#faf9ff] p-4">
+          <div className="flex-1 space-y-5 overflow-y-auto bg-white dark:bg-slate-900 px-6 py-6">
+            <div className="rounded-2xl border border-[#ece9f5] dark:border-slate-700 bg-[#faf9ff] dark:bg-slate-800/70 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-slate-900">
+                  <p className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">
                     {customer.name || "Walk-in customer"}
                   </p>
-                  <p className="mt-0.5 text-xs text-slate-500">Bill {bill.bill_number || "—"}</p>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Bill {bill.bill_number || "—"}</p>
                 </div>
                 <StatusPill status={status} />
               </div>
-              <div className="mt-3 border-t border-[#eae7f4] pt-3">
-                <p className="text-[11px] font-semibold text-slate-500">Pending amount</p>
-                <p className="mt-1 text-2xl font-extrabold tracking-tight text-rose-600 tabular-nums">
+              <div className="mt-3 border-t border-[#eae7f4] dark:border-slate-700 pt-3">
+                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Pending amount</p>
+                <p className="mt-1 text-2xl font-extrabold tracking-tight text-rose-600 dark:text-rose-300 tabular-nums">
                   {formatCurrency(totals.amountDue)}
                 </p>
               </div>
             </div>
 
             {customer.id && (
-              <div className="space-y-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
+              <div className="space-y-3 rounded-2xl border border-blue-100 dark:border-blue-900/60 bg-blue-50/60 dark:bg-blue-950/30 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-bold text-blue-900">Customer advance available</p>
-                    <p className="mt-0.5 text-xs text-blue-700">
+                    <p className="mt-0.5 text-xs text-blue-700 dark:text-blue-300">
                       {advanceLoading ? "Checking advance balance…" : "Use the customer's previously received advance"}
                     </p>
                   </div>
-                  <span className="shrink-0 text-base font-extrabold tabular-nums text-blue-800">
+                  <span className="shrink-0 text-base font-extrabold tabular-nums text-blue-800 dark:text-blue-200">
                     {formatCurrency(availableAdvance)}
                   </span>
                 </div>
@@ -1955,18 +1955,18 @@ function RecordPaymentDialog({ open, onClose, bill, status, customer, totals, to
                       className={fieldClass}
                     />
                     <div className="flex flex-wrap gap-2">
-                      <button type="button" onClick={() => setAdvanceAmount("0")} className="rounded-full border border-blue-200 bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100">Don't use</button>
-                      <button type="button" onClick={() => setAdvanceAmount(String(round2(Math.min(availableAdvance, totals.amountDue))))} className="rounded-full border border-blue-200 bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100">Use maximum</button>
+                      <button type="button" onClick={() => setAdvanceAmount("0")} className="rounded-full border border-blue-200 dark:border-blue-900/60 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-950/40">Don't use</button>
+                      <button type="button" onClick={() => setAdvanceAmount(String(round2(Math.min(availableAdvance, totals.amountDue))))} className="rounded-full border border-blue-200 dark:border-blue-900/60 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-950/40">Use maximum</button>
                     </div>
                   </div>
                 ) : !advanceLoading ? (
-                  <p className="text-xs text-slate-500">No unused advance is available for this customer.</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">No unused advance is available for this customer.</p>
                 ) : null}
               </div>
             )}
 
             <div className="space-y-1.5">
-              <Label htmlFor="payment-amount" className="text-[13px] font-medium text-slate-700">
+              <Label htmlFor="payment-amount" className="text-[13px] font-medium text-slate-700 dark:text-slate-300">
                 Payment amount (₹)
               </Label>
               <Input
@@ -1984,7 +1984,7 @@ function RecordPaymentDialog({ open, onClose, bill, status, customer, totals, to
                 placeholder="Enter amount"
               />
               {(!advanceValid || (Number.isFinite(numericAmount) && round2(numericAmount + numericAdvance) > totals.amountDue)) && (
-                <p className="text-xs text-rose-600">
+                <p className="text-xs text-rose-600 dark:text-rose-300">
                   Payment plus advance cannot exceed the pending amount of {formatCurrency(totals.amountDue)}.
                 </p>
               )}
@@ -1994,7 +1994,7 @@ function RecordPaymentDialog({ open, onClose, bill, status, customer, totals, to
                     key={fraction}
                     type="button"
                     onClick={() => setAmount(String(round2(totals.amountDue * fraction)))}
-                    className="rounded-full border border-violet-100 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
+                    className="rounded-full border border-violet-100 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition-colors hover:bg-violet-50 dark:hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
                   >
                     {fraction === 1 ? "Full amount" : `${fraction * 100}%`}
                   </button>
@@ -2004,7 +2004,7 @@ function RecordPaymentDialog({ open, onClose, bill, status, customer, totals, to
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label className="text-[13px] font-medium text-slate-700">Payment mode</Label>
+                <Label className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Payment mode</Label>
                 <Select value={mode} onValueChange={setMode}>
                   <SelectTrigger className={fieldClass}>
                     <SelectValue placeholder="Select payment mode" />
@@ -2020,7 +2020,7 @@ function RecordPaymentDialog({ open, onClose, bill, status, customer, totals, to
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="payment-date" className="text-[13px] font-medium text-slate-700">
+                <Label htmlFor="payment-date" className="text-[13px] font-medium text-slate-700 dark:text-slate-300">
                   Payment date
                 </Label>
                 <Input
@@ -2037,11 +2037,11 @@ function RecordPaymentDialog({ open, onClose, bill, status, customer, totals, to
             </div>
 
             {remainingAfter !== null && (
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3">
-                <span className="text-xs font-semibold text-emerald-800">Balance after payment and advance</span>
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-100 dark:border-emerald-900/60 bg-emerald-50/60 px-4 py-3">
+                <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-200">Balance after payment and advance</span>
                 <span
                   className={`text-sm font-bold tabular-nums ${
-                    remainingAfter === 0 ? "text-emerald-700" : "text-slate-900"
+                    remainingAfter === 0 ? "text-emerald-700 dark:text-emerald-300" : "text-slate-900 dark:text-slate-100"
                   }`}
                 >
                   {formatCurrency(remainingAfter)}
@@ -2050,20 +2050,20 @@ function RecordPaymentDialog({ open, onClose, bill, status, customer, totals, to
             )}
           </div>
 
-          <DialogFooter className="border-t border-[#eae7f4] bg-[#f7f5ff] px-6 py-4 sm:justify-end sm:gap-2">
+          <DialogFooter className="border-t border-[#eae7f4] dark:border-slate-700 bg-[#f7f5ff] dark:bg-slate-950 px-6 py-4 sm:justify-end sm:gap-2">
             <Button
               type="button"
               variant="outline"
               onClick={onClose}
               disabled={saving}
-              className="h-11 rounded-xl border-violet-200 bg-white px-5 text-sm font-medium text-slate-700 hover:bg-violet-50 shadow-sm"
+              className="h-11 rounded-xl border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-slate-800 shadow-sm"
             >
               Cancel
             </Button>
             <Button
               type="submit"
               disabled={saving || !isValid}
-              className="h-11 gap-2 rounded-xl border border-violet-200 bg-white px-6 text-sm font-semibold text-slate-700 shadow-sm hover:bg-violet-50 disabled:opacity-50"
+              className="h-11 gap-2 rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-6 text-sm font-semibold text-slate-700 dark:text-slate-300 shadow-sm hover:bg-violet-50 dark:hover:bg-slate-800 disabled:opacity-50"
             >
               {saving ? (
                 <>
@@ -2108,13 +2108,13 @@ function BillPreviewDialog({ open, onOpenChange, bill, items, customer, shop, to
           }
         `}</style>
 
-        <DialogHeader className="border-b border-[#eae7f4] bg-[#f7f5ff] px-5 py-4 text-left">
+        <DialogHeader className="border-b border-[#eae7f4] dark:border-slate-700 bg-[#f7f5ff] dark:bg-slate-950 px-5 py-4 text-left">
           <div className="flex items-center gap-3 pr-8">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300">
               <Eye className="h-5 w-5" aria-hidden="true" />
             </div>
             <div>
-              <DialogTitle className="text-base font-bold text-[#171a36]">Bill preview</DialogTitle>
+              <DialogTitle className="text-base font-bold text-[#171a36] dark:text-slate-100">Bill preview</DialogTitle>
               <DialogDescription className="text-xs">
                 {bill.bill_number || "Bill"} · {customer.name || "Walk-in customer"}
               </DialogDescription>
@@ -2122,30 +2122,30 @@ function BillPreviewDialog({ open, onOpenChange, bill, items, customer, shop, to
           </div>
         </DialogHeader>
 
-        <div className="bill-preview-scroll min-h-0 flex-1 overflow-y-auto bg-[#efedf7] p-3 sm:p-6">
+        <div className="bill-preview-scroll min-h-0 flex-1 overflow-y-auto bg-[#efedf7] dark:bg-slate-800 p-3 sm:p-6">
           <article
             id="bill-print-area"
-            className="mx-auto max-w-3xl overflow-hidden rounded-xl bg-white text-slate-800 shadow-[0_2px_12px_rgba(15,23,42,0.10)]"
+            className="mx-auto max-w-3xl overflow-hidden rounded-xl bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 shadow-[0_2px_12px_rgba(15,23,42,0.10)]"
           >
             {/* Letterhead */}
             <div className="flex flex-col gap-4 px-6 pt-6 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
-                <p className="text-xl font-bold tracking-tight text-slate-950">{shop.name || "Shop"}</p>
-                <div className="mt-2 space-y-0.5 text-sm text-slate-500">
+                <p className="text-xl font-bold tracking-tight text-slate-950 dark:text-slate-50">{shop.name || "Shop"}</p>
+                <div className="mt-2 space-y-0.5 text-sm text-slate-500 dark:text-slate-400">
                   {shop.address && <p className="max-w-xs">{shop.address}</p>}
                   {shop.mobile && <p>Mobile: {shop.mobile}</p>}
                   {shop.gstin && (
                     <p>
-                      GSTIN: <span className="font-medium text-slate-700">{shop.gstin}</span>
+                      GSTIN: <span className="font-medium text-slate-700 dark:text-slate-300">{shop.gstin}</span>
                     </p>
                   )}
                 </div>
               </div>
               <div className="sm:text-right">
-                <p className="text-sm font-semibold text-emerald-700">
+                <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
                   {shop.gstin ? "Tax invoice" : "Invoice"}
                 </p>
-                <p className="mt-1 text-2xl font-bold tracking-tight text-slate-950">
+                <p className="mt-1 text-2xl font-bold tracking-tight text-slate-950 dark:text-slate-50">
                   {bill.bill_number || "—"}
                 </p>
                 <div className="mt-2 sm:flex sm:justify-end">
@@ -2155,13 +2155,13 @@ function BillPreviewDialog({ open, onOpenChange, bill, items, customer, shop, to
             </div>
 
             {/* Parties and details */}
-            <div className="mt-6 grid grid-cols-1 gap-5 border-y border-slate-100 bg-slate-50/70 px-6 py-5 sm:grid-cols-2">
+            <div className="mt-6 grid grid-cols-1 gap-5 border-y border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/70 px-6 py-5 sm:grid-cols-2">
               <div>
-                <p className="text-xs font-medium text-slate-500">Billed to</p>
-                <p className="mt-1.5 text-base font-bold text-slate-900">
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Billed to</p>
+                <p className="mt-1.5 text-base font-bold text-slate-900 dark:text-slate-100">
                   {customer.name || "Walk-in customer"}
                 </p>
-                <div className="mt-1 space-y-0.5 text-sm text-slate-500">
+                <div className="mt-1 space-y-0.5 text-sm text-slate-500 dark:text-slate-400">
                   {customer.mobile && <p>Mobile: {customer.mobile}</p>}
                   {customerAddress && <p>{customerAddress}</p>}
                   {customer.gstin && <p>GSTIN: {customer.gstin}</p>}
@@ -2175,8 +2175,8 @@ function BillPreviewDialog({ open, onOpenChange, bill, items, customer, shop, to
                   ["Tax calculation", bill.tax_inclusive ? "Tax inclusive" : "Tax exclusive"],
                 ].map(([label, value]) => (
                   <div key={label}>
-                    <dt className="text-xs font-medium text-slate-500">{label}</dt>
-                    <dd className="mt-0.5 font-semibold text-slate-900">{value}</dd>
+                    <dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</dt>
+                    <dd className="mt-0.5 font-semibold text-slate-900 dark:text-slate-100">{value}</dd>
                   </div>
                 ))}
               </dl>
@@ -2186,7 +2186,7 @@ function BillPreviewDialog({ open, onOpenChange, bill, items, customer, shop, to
             <div className="overflow-x-auto px-6 py-5">
               <table className="w-full min-w-[600px] text-left text-sm">
                 <thead>
-                  <tr className="border-b-2 border-slate-200 text-xs font-semibold text-slate-500">
+                  <tr className="border-b-2 border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-500 dark:text-slate-400">
                     <th className="w-10 py-2.5 pr-2">#</th>
                     <th className="px-2 py-2.5">Item</th>
                     <th className="px-2 py-2.5 text-right">Qty</th>
@@ -2196,21 +2196,21 @@ function BillPreviewDialog({ open, onOpenChange, bill, items, customer, shop, to
                     <th className="py-2.5 pl-2 text-right">Amount</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-slate-500">
+                      <td colSpan={7} className="py-8 text-center text-slate-500 dark:text-slate-400">
                         No bill items found.
                       </td>
                     </tr>
                   ) : (
                     items.map((item, index) => (
                       <tr key={item.id || index}>
-                        <td className="py-3 pr-2 text-slate-400">{index + 1}</td>
+                        <td className="py-3 pr-2 text-slate-400 dark:text-slate-500">{index + 1}</td>
                         <td className="px-2 py-3">
-                          <p className="font-medium text-slate-900">{item.item_name || "Item"}</p>
+                          <p className="font-medium text-slate-900 dark:text-slate-100">{item.item_name || "Item"}</p>
                           {item.description && (
-                            <p className="mt-0.5 text-xs text-slate-500">{item.description}</p>
+                            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{item.description}</p>
                           )}
                         </td>
                         <td className="px-2 py-3 text-right tabular-nums">
@@ -2221,7 +2221,7 @@ function BillPreviewDialog({ open, onOpenChange, bill, items, customer, shop, to
                           {num(item.discount) > 0 ? formatCurrency(item.discount) : "—"}
                         </td>
                         <td className="px-2 py-3 text-right tabular-nums">{num(item.gst_percent)}%</td>
-                        <td className="py-3 pl-2 text-right font-semibold tabular-nums text-slate-900">
+                        <td className="py-3 pl-2 text-right font-semibold tabular-nums text-slate-900 dark:text-slate-100">
                           {formatCurrency(item.total_amount)}
                         </td>
                       </tr>
@@ -2230,25 +2230,25 @@ function BillPreviewDialog({ open, onOpenChange, bill, items, customer, shop, to
                 </tbody>
               </table>
               {items.length > 0 && (
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                   {items.length} {items.length === 1 ? "item" : "items"} · total quantity {totalQty}
                 </p>
               )}
             </div>
 
             {/* Totals */}
-            <div className="grid grid-cols-1 gap-6 border-t border-slate-200 px-6 py-5 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-6 border-t border-slate-200 dark:border-slate-700 px-6 py-5 sm:grid-cols-2">
               <div className="space-y-4">
                 <div>
-                  <p className="text-xs font-medium text-slate-500">Amount in words</p>
-                  <p className="mt-1 text-sm font-medium leading-5 text-slate-800">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Amount in words</p>
+                  <p className="mt-1 text-sm font-medium leading-5 text-slate-800 dark:text-slate-200">
                     {amountInWords(totals.grandTotal)}
                   </p>
                 </div>
                 {bill.notes && (
                   <div>
-                    <p className="text-xs font-medium text-slate-500">Notes</p>
-                    <p className="mt-1 whitespace-pre-wrap text-sm leading-5 text-slate-600">{bill.notes}</p>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Notes</p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm leading-5 text-slate-600 dark:text-slate-300">{bill.notes}</p>
                   </div>
                 )}
               </div>
@@ -2274,7 +2274,7 @@ function BillPreviewDialog({ open, onOpenChange, bill, items, customer, shop, to
                   <span className="text-lg font-bold tabular-nums">{formatCurrency(totals.grandTotal)}</span>
                 </div>
 
-                <div className="mt-3 border-t border-dashed border-slate-200 pt-1">
+                <div className="mt-3 border-t border-dashed border-slate-200 dark:border-slate-700 pt-1">
                   {totals.advanceAdjusted > 0 && (
                     <AmountRow
                       label="Advance adjusted"
@@ -2289,7 +2289,7 @@ function BillPreviewDialog({ open, onOpenChange, bill, items, customer, shop, to
                   <AmountRow
                     label="Balance due"
                     value={formatCurrency(totals.amountDue)}
-                    valueClass={isPaid ? "text-emerald-600" : "text-rose-600"}
+                    valueClass={isPaid ? "text-emerald-600" : "text-rose-600 dark:text-rose-300"}
                     bold
                   />
                 </div>
@@ -2297,25 +2297,25 @@ function BillPreviewDialog({ open, onOpenChange, bill, items, customer, shop, to
             </div>
 
             {/* Footer */}
-            <div className="flex items-end justify-between gap-6 border-t border-slate-100 bg-slate-50/70 px-6 py-5">
-              <p className="max-w-xs text-xs leading-5 text-slate-500">
+            <div className="flex items-end justify-between gap-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/70 px-6 py-5">
+              <p className="max-w-xs text-xs leading-5 text-slate-500 dark:text-slate-400">
                 Thank you for your business. This is a computer generated invoice.
               </p>
               <div className="text-center">
                 <div className="mb-1.5 h-px w-40 bg-slate-300" />
-                <p className="text-xs font-medium text-slate-600">Authorised signatory</p>
-                <p className="text-xs text-slate-400">{shop.name || ""}</p>
+                <p className="text-xs font-medium text-slate-600 dark:text-slate-300">Authorised signatory</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">{shop.name || ""}</p>
               </div>
             </div>
           </article>
         </div>
 
-        <DialogFooter className="gap-2 border-t border-[#eae7f4] bg-[#f7f5ff] px-5 py-3 sm:gap-2">
+        <DialogFooter className="gap-2 border-t border-[#eae7f4] dark:border-slate-700 bg-[#f7f5ff] dark:bg-slate-950 px-5 py-3 sm:gap-2">
           <Button
             type="button"
             variant="outline"
             onClick={() => onOpenChange(false)}
-            className="h-10 gap-2 rounded-xl border border-violet-200 bg-white text-slate-700 hover:bg-violet-50 shadow-sm"
+            className="h-10 gap-2 rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-slate-800 shadow-sm"
           >
             Close
           </Button>
@@ -2323,7 +2323,7 @@ function BillPreviewDialog({ open, onOpenChange, bill, items, customer, shop, to
             type="button"
             variant="outline"
             onClick={() => window.print()}
-            className="h-10 gap-2 rounded-xl border border-violet-200 bg-white text-slate-700 hover:bg-violet-50 shadow-sm"
+            className="h-10 gap-2 rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-slate-800 shadow-sm"
           >
             <Printer className="h-4 w-4" aria-hidden="true" />
             Print
@@ -2331,7 +2331,7 @@ function BillPreviewDialog({ open, onOpenChange, bill, items, customer, shop, to
           <Button
             type="button"
             onClick={onDownload}
-            className="h-10 gap-2 rounded-xl border border-violet-200 bg-white text-slate-700 hover:bg-violet-50 shadow-sm"
+            className="h-10 gap-2 rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-slate-800 shadow-sm"
           >
             <Download className="h-4 w-4" aria-hidden="true" />
             Download PDF
@@ -2355,13 +2355,13 @@ function AttachmentPreviewDialog({ open, onOpenChange, url, billNumber }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[94vh] w-[calc(100vw-1.5rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-[20px] p-0">
-        <DialogHeader className="border-b border-[#eae7f4] bg-[#f7f5ff] px-5 py-4 text-left">
+        <DialogHeader className="border-b border-[#eae7f4] dark:border-slate-700 bg-[#f7f5ff] dark:bg-slate-950 px-5 py-4 text-left">
           <div className="flex items-center gap-3 pr-8">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300">
               <ImageIcon className="h-5 w-5" aria-hidden="true" />
             </div>
             <div>
-              <DialogTitle className="text-base font-bold text-[#171a36]">Attached bill</DialogTitle>
+              <DialogTitle className="text-base font-bold text-[#171a36] dark:text-slate-100">Attached bill</DialogTitle>
               <DialogDescription className="text-xs">
                 Offline copy uploaded with {billNumber || "this bill"}
               </DialogDescription>
@@ -2369,7 +2369,7 @@ function AttachmentPreviewDialog({ open, onOpenChange, url, billNumber }) {
           </div>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-auto bg-[#efedf7] p-4">
+        <div className="min-h-0 flex-1 overflow-auto bg-[#efedf7] dark:bg-slate-800 p-4">
           {image ? (
             <img
               src={url}
@@ -2377,22 +2377,22 @@ function AttachmentPreviewDialog({ open, onOpenChange, url, billNumber }) {
               onClick={() => setZoomed((value) => !value)}
               className={
                 zoomed
-                  ? "mx-auto max-w-none cursor-zoom-out rounded-lg bg-white shadow"
-                  : "mx-auto max-h-[68vh] w-auto max-w-full cursor-zoom-in rounded-lg bg-white object-contain shadow"
+                  ? "mx-auto max-w-none cursor-zoom-out rounded-lg bg-white dark:bg-slate-900 shadow"
+                  : "mx-auto max-h-[68vh] w-auto max-w-full cursor-zoom-in rounded-lg bg-white dark:bg-slate-900 object-contain shadow"
               }
             />
           ) : (
-            <iframe src={url} title="Attached bill document" className="h-[68vh] w-full rounded-lg bg-white shadow" />
+            <iframe src={url} title="Attached bill document" className="h-[68vh] w-full rounded-lg bg-white dark:bg-slate-900 shadow" />
           )}
         </div>
 
-        <DialogFooter className="gap-2 border-t border-[#eae7f4] bg-[#f7f5ff] px-5 py-3 sm:gap-2">
+        <DialogFooter className="gap-2 border-t border-[#eae7f4] dark:border-slate-700 bg-[#f7f5ff] dark:bg-slate-950 px-5 py-3 sm:gap-2">
           {image && (
             <Button
               type="button"
               variant="outline"
               onClick={() => setZoomed((value) => !value)}
-              className="h-10 gap-2 rounded-xl border-violet-200 bg-white hover:bg-violet-50"
+              className="h-10 gap-2 rounded-xl border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-violet-50 dark:hover:bg-slate-800"
             >
               {zoomed ? <ZoomOut className="h-4 w-4" /> : <ZoomIn className="h-4 w-4" />}
               {zoomed ? "Fit to screen" : "Actual size"}
@@ -2401,7 +2401,7 @@ function AttachmentPreviewDialog({ open, onOpenChange, url, billNumber }) {
           <Button
             asChild
             variant="outline"
-            className="h-10 gap-2 rounded-xl border-violet-200 bg-white hover:bg-violet-50 shadow-sm"
+            className="h-10 gap-2 rounded-xl border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-violet-50 dark:hover:bg-slate-800 shadow-sm"
           >
             <a href={url} target="_blank" rel="noopener noreferrer">
               <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
@@ -2411,7 +2411,7 @@ function AttachmentPreviewDialog({ open, onOpenChange, url, billNumber }) {
           <Button
             type="button"
             onClick={() => onOpenChange(false)}
-            className="h-10 rounded-xl border border-violet-200 bg-white text-slate-700 hover:bg-violet-50"
+            className="h-10 rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-slate-800"
           >
             Close
           </Button>
@@ -2929,13 +2929,13 @@ export default function BillDetail() {
 
   if (!currentShop) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center rounded-3xl border border-dashed border-violet-200 bg-white/80 p-8 text-center">
+      <div className="flex min-h-[400px] items-center justify-center rounded-3xl border border-dashed border-violet-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 p-8 text-center">
         <div className="max-w-sm">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300">
             <Receipt className="h-7 w-7" aria-hidden="true" />
           </div>
-          <h2 className="mt-4 text-lg font-bold text-slate-900">No workspace selected</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-500">Select a workspace to view this bill.</p>
+          <h2 className="mt-4 text-lg font-bold text-slate-900 dark:text-slate-100">No workspace selected</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">Select a workspace to view this bill.</p>
         </div>
       </div>
     )
@@ -2945,15 +2945,15 @@ export default function BillDetail() {
 
   if (!bill) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center rounded-3xl border border-dashed border-violet-200 bg-white/80 p-8 text-center">
+      <div className="flex min-h-[400px] items-center justify-center rounded-3xl border border-dashed border-violet-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 p-8 text-center">
         <div className="max-w-sm">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-50 text-violet-600">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-50 dark:bg-violet-950/30 text-violet-600 dark:text-violet-300">
             <Receipt className="h-7 w-7" aria-hidden="true" />
           </div>
-          <h2 className="mt-4 text-lg font-bold text-slate-900">
+          <h2 className="mt-4 text-lg font-bold text-slate-900 dark:text-slate-100">
             {loadError ? "Could not load bill" : "Bill not found"}
           </h2>
-          <p className="mt-2 text-sm leading-6 text-slate-500">
+          <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
             {loadError || "This bill may have been deleted or does not belong to this workspace."}
           </p>
 
@@ -2963,7 +2963,7 @@ export default function BillDetail() {
                 type="button"
                 variant="outline"
                 onClick={() => loadBill()}
-                className="rounded-xl border-violet-200 bg-white hover:bg-violet-50"
+                className="rounded-xl border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-violet-50 dark:hover:bg-slate-800"
               >
                 <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
                 Try again
@@ -2972,7 +2972,7 @@ export default function BillDetail() {
             <Button
               type="button"
               onClick={() => navigate("/bills")}
-              className="rounded-xl border border-violet-200 bg-white text-slate-700 hover:bg-violet-50"
+              className="rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-slate-800"
             >
               <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
               Back to bills
@@ -2989,7 +2989,7 @@ export default function BillDetail() {
   /* ------------------------------ Main UI ---------------------------------- */
 
   return (
-    <div className="min-h-full w-full space-y-4 rounded-2xl bg-[#f7f5ff] px-3 py-5 sm:px-5 lg:px-6">
+    <div className="min-h-full w-full space-y-4 rounded-2xl bg-[#f7f5ff] dark:bg-slate-950 px-3 py-5 sm:px-5 lg:px-6">
       <PageHeader
         bill={bill}
         customer={customer}
@@ -3038,7 +3038,7 @@ export default function BillDetail() {
           detail={dueInfo.text}
           icon={IndianRupee}
           tone="pink"
-          valueClass={isFullyPaid ? "text-emerald-700" : "text-rose-600"}
+          valueClass={isFullyPaid ? "text-emerald-700 dark:text-emerald-300" : "text-rose-600 dark:text-rose-300"}
         />
         <SummaryCard
           label="Payment progress"
@@ -3048,7 +3048,7 @@ export default function BillDetail() {
           tone="purple"
         >
           <div
-            className="mt-4 h-2 overflow-hidden rounded-full bg-violet-100"
+            className="mt-4 h-2 overflow-hidden rounded-full bg-violet-100 dark:bg-violet-950/50"
             role="progressbar"
             aria-label="Payment progress"
             aria-valuemin={0}
@@ -3112,12 +3112,12 @@ export default function BillDetail() {
 
       {/* FOOTER */}
 
-      <footer className="flex flex-col justify-between gap-2 rounded-xl border border-white/80 bg-white/65 px-4 py-3 text-xs text-slate-500 sm:flex-row sm:items-center">
+      <footer className="flex flex-col justify-between gap-2 rounded-xl border border-white/80 dark:border-slate-700 bg-white/65 dark:bg-slate-900/65 px-4 py-3 text-xs text-slate-500 dark:text-slate-400 sm:flex-row sm:items-center">
         <div className="flex items-center gap-2">
-          <Receipt className="h-4 w-4 text-emerald-700" aria-hidden="true" />
+          <Receipt className="h-4 w-4 text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
           <span>
             Bill:
-            <strong className="ml-1 text-slate-700">{bill.bill_number || "—"}</strong>
+            <strong className="ml-1 text-slate-700 dark:text-slate-300">{bill.bill_number || "—"}</strong>
           </span>
         </div>
 

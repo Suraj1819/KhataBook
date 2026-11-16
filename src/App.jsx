@@ -23,7 +23,7 @@ import CustomerDetails from "@/pages/CustomerDetails"
 import KhataDetail from "@/pages/KhataDetail"
 import TownCollections from "@/pages/TownCollections"
 import ImportOfflineBill from "@/pages/ImportOfflineBill"
-
+import Reminder from "@/pages/Reminder"
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -76,6 +76,7 @@ export default function App() {
                   <Route path="/bills/new" element={<CreateBill />} />
                   <Route path="/bills/:id" element={<BillDetail />} />
                   <Route path="/khata" element={<Khata />} />
+                  <Route path="/reminders" element={<Reminder />} />
                   <Route path="/khata/:customerKey" element={<KhataDetail />} />
                   <Route path="/dues" element={<Dues />} />
                   <Route path="/customers/:customerId" element={<CustomerDetails />} />

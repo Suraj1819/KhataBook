@@ -1,42 +1,38 @@
 import { createContext, useContext, useEffect, useState } from "react"
 
-const ThemeContext = createContext(undefined)
+const ThemeContext = createContext(null)
+
+const THEME_KEY = "khaatapro-session-theme"
 
 export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => {
-    if (typeof window !== "undefined") {
-      const savedTheme = localStorage.getItem("app-theme")
-
-      if (savedTheme === "dark" || savedTheme === "light") {
-        return savedTheme
-      }
+    try {
+      // Same browser session mein refresh par selected theme restore hogi.
+      return sessionStorage.getItem(THEME_KEY) || "light"
+    } catch {
+      return "light"
     }
-
-    // Default theme: Light
-    return "light"
   })
 
   useEffect(() => {
     const root = document.documentElement
 
-    root.style.setProperty(
-      "transition",
-      "background-color 0.3s ease, color 0.3s ease"
-    )
-
     root.classList.toggle("dark", theme === "dark")
+    root.style.colorScheme = theme
 
-    localStorage.setItem("app-theme", theme)
+    try {
+      sessionStorage.setItem(THEME_KEY, theme)
+    } catch {
+      // Theme still works for the current page.
+    }
   }, [theme])
 
   const toggleTheme = () => {
-    setTheme((prevTheme) =>
-      prevTheme === "dark" ? "light" : "dark"
-    )
+    setTheme((current) => current === "dark" ? "light" : "dark")
   }
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   )
@@ -45,8 +41,8 @@ export function ThemeProvider({ children }) {
 export function useTheme() {
   const context = useContext(ThemeContext)
 
-  if (context === undefined) {
-    throw new Error("useTheme must be used within a ThemeProvider")
+  if (!context) {
+    throw new Error("useTheme must be used within ThemeProvider")
   }
 
   return context

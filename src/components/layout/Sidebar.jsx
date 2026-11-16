@@ -5,12 +5,13 @@ import {
   LayoutDashboard, Users, FileText, PlusCircle, BookOpen,
   AlertCircle, CreditCard, Settings, Store, UserCircle,
   X, ChevronDown, TrendingUp, LogOut, Check, Plus,
-  ChevronsLeft, ChevronsRight, Sun, Moon, Monitor, Loader2,
+  ChevronsLeft, ChevronsRight, Sun, Moon, Loader2,
   MapPin, ScanLine, Command,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useShop } from "@/contexts/ShopContext"
 import { useAuth } from "@/contexts/AuthContext"
+import { useTheme } from "@/contexts/ThemeContext"
 
 /* ==================================================
    CONSTANTS & HELPERS
@@ -21,12 +22,9 @@ const WIDTH_STORAGE_KEY = "sidebar-width"
 const MIN_SIDEBAR_WIDTH = 220
 const MAX_SIDEBAR_WIDTH = 380
 const DEFAULT_SIDEBAR_WIDTH = 260
-const THEME_KEY = "theme"
-
 const THEME_OPTIONS = [
   { value: "light", label: "Light", icon: Sun },
   { value: "dark", label: "Dark", icon: Moon },
-  { value: "system", label: "System", icon: Monitor },
 ]
 
 const navGroups = [
@@ -83,58 +81,6 @@ function getInitials(name = "") {
 }
 
 /* ==================================================
-   THEME
-================================================== */
-
-function useTheme() {
-  const [theme, setTheme] = useState(() => {
-    try {
-      const saved = localStorage.getItem(THEME_KEY)
-
-      return THEME_OPTIONS.some((option) => option.value === saved)
-        ? saved
-        : "system"
-    } catch {
-      return "system"
-    }
-  })
-
-  useEffect(() => {
-    const media = window.matchMedia("(prefers-color-scheme: dark)")
-
-    const apply = () => {
-      const isDark =
-        theme === "dark" ||
-        (theme === "system" && media.matches)
-
-      document.documentElement.classList.toggle("dark", isDark)
-    }
-
-    apply()
-
-    if (media.addEventListener) {
-      media.addEventListener("change", apply)
-
-      return () => media.removeEventListener("change", apply)
-    }
-
-    media.addListener(apply)
-
-    return () => media.removeListener(apply)
-  }, [theme])
-
-  const changeTheme = useCallback((next) => {
-    setTheme(next)
-
-    try {
-      localStorage.setItem(THEME_KEY, next)
-    } catch {}
-  }, [])
-
-  return [theme, changeTheme]
-}
-
-/* ==================================================
    SMALL UI PIECES
 ================================================== */
 
@@ -186,7 +132,7 @@ export function Sidebar({ open, onClose }) {
   const { pathname } = useLocation()
   const navigate = useNavigate()
 
-  const [theme, changeTheme] = useTheme()
+  const { theme, setTheme } = useTheme()
 
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -1118,7 +1064,7 @@ export function Sidebar({ open, onClose }) {
                 <div
                   role="radiogroup"
                   aria-label="Theme"
-                  className="grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-900/60"
+                  className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-900/60"
                 >
                   {THEME_OPTIONS.map(({ value, label, icon: Icon }) => {
                     const selected = theme === value
@@ -1131,7 +1077,7 @@ export function Sidebar({ open, onClose }) {
                         aria-checked={selected}
                         aria-label={label}
                         title={label}
-                        onClick={() => changeTheme(value)}
+                        onClick={() => setTheme(value)}
                         className={cn(
                           "flex h-8 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f8a4b] dark:focus-visible:ring-emerald-400",
                           selected
