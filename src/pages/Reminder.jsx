@@ -1250,6 +1250,64 @@ function notificationTone(eventType = "") {
   return "border-violet-200 bg-violet-50/70 text-violet-700"
 }
 
+function getNotificationEntityLabel(item) {
+  const type = String(item?.entity_type || "").toLowerCase()
+  const metadata = (() => {
+    const value = item?.metadata
+    if (!value) return {}
+    if (typeof value === "object") return value
+    if (typeof value === "string") {
+      try { return JSON.parse(value) } catch { return {} }
+    }
+    return {}
+  })()
+
+  const candidates = [
+    item?.entity_label,
+    metadata.entity_label,
+    metadata.entity_name,
+    metadata.name,
+    metadata.customer_name,
+    metadata.bill_number,
+    metadata.product_name,
+    metadata.supplier_name,
+    metadata.category_name,
+    metadata.record?.name,
+    metadata.record?.bill_number,
+    metadata.old_record?.name,
+    metadata.old_record?.bill_number,
+  ]
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+  const actualName = candidates.find((value) => {
+    if (typeof value !== "string") return false
+    const clean = value.trim()
+    return clean && !uuidPattern.test(clean) && !/^[0-9a-f-]{24,}$/i.test(clean)
+  })
+  if (actualName) return String(actualName).trim()
+
+  const labels = {
+    customer: "Customer record",
+    bill: "Bill record",
+    product: "Product record",
+    item: "Item record",
+    supplier: "Supplier record",
+    category: "Category record",
+    shop: "Shop record",
+    payment: "Payment record",
+    expense: "Expense record",
+    reminder: "Reminder record",
+  }
+  return labels[type] || (type ? `${type.replaceAll("_", " ")} record` : "Business record")
+}
+
+function cleanNotificationText(value) {
+  if (!value) return ""
+  return String(value).replace(
+    /\\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\b/gi,
+    "record"
+  )
+}
+
 function notificationTime(value) {
   if (!value) return "Recently"
   const date = new Date(value)
@@ -1886,6 +1944,29 @@ export default function Reminders() {
         .reminders-page { color-scheme: light; }
         html.dark .reminders-page, .dark .reminders-page, [data-theme="dark"] .reminders-page { color-scheme: dark; background: #020617 !important; color: #f1f5f9; }
         .reminders-page button:not(:disabled) { -webkit-tap-highlight-color: transparent; }
+        /* Shared button foundation: neutral lavender/white, consistent across the page.
+           Utility classes may still adjust size or semantic state where needed. */
+        :where(.reminders-page) button {
+          border-radius: 12px;
+          border-color: #ddd6fe;
+          background-color: rgba(255,255,255,.94);
+          color: #475569;
+          box-shadow: 0 1px 2px rgba(80,65,130,.07);
+          transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+        }
+        :where(.reminders-page) button:hover:not(:disabled) {
+          border-color: #c4b5fd;
+          background-color: #f5f3ff;
+          box-shadow: 0 3px 9px rgba(80,65,130,.10);
+        }
+        :where(.reminders-page) button:focus-visible {
+          outline: 2px solid #8b5cf6;
+          outline-offset: 2px;
+        }
+        :where(.reminders-page) button:disabled {
+          cursor: not-allowed;
+          opacity: .48;
+        }
         .reminders-page .bg-emerald-600 { background-color:#fff !important; color:#334155 !important; border-color:#ddd6fe !important; }
         .reminders-page .hover\\:bg-emerald-700:hover { background-color:#f5f3ff !important; }
         .reminders-page .text-emerald-700 { color:#475569 !important; }
@@ -2182,16 +2263,16 @@ export default function Reminders() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-bold text-[#171a36]">{item.title || "Important update"}</p>
+                      <p className="text-sm font-bold text-[#171a36]">{cleanNotificationText(item.title) || "Important update"}</p>
                       {isUnread && <span className="h-2 w-2 rounded-full bg-violet-600" aria-label="Unread" />}
-                      {item.entity_label && (
+                      {(item.entity_label || String(item.event_type || "").includes("deleted")) && (
                         <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                          {item.entity_label}
+                          {getNotificationEntityLabel(item)}
                         </span>
                       )}
                     </div>
                     <p className="mt-1 whitespace-pre-line break-words text-xs leading-5 text-slate-600">
-                      {item.body || item.message || "An important business event occurred."}
+                      {cleanNotificationText(item.body || item.message) || "An important business event occurred."}
                     </p>
                     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-400">
                       <span>{notificationTime(item.created_at)}</span>

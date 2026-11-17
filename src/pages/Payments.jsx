@@ -124,10 +124,8 @@ function applyRange(query, column, range) {
 
 const initialForm = () => ({
   customer_id: "",
-  amount: "",
   payment_mode: "Cash",
   payment_date: getLocalDateString(),
-  is_advance: false,
   notes: "",
 })
 
@@ -435,7 +433,15 @@ export default function Payments() {
   const [saving, setSaving] = useState(false)
   const [deletingPaymentId, setDeletingPaymentId] = useState(null)
   const [paymentToDelete, setPaymentToDelete] = useState(null)
-  const [customerDue, setCustomerDue] = useState(null)
+
+  // Bill-wise payment allocation
+  const [pendingBills, setPendingBills] = useState([])
+  const [billsLoading, setBillsLoading] = useState(false)
+  const [billLoadError, setBillLoadError] = useState("")
+  const [billAllocations, setBillAllocations] = useState({})
+  const [advanceAmount, setAdvanceAmount] = useState("")
+  const [confirmationOpen, setConfirmationOpen] = useState(false)
+  const [preparedPayment, setPreparedPayment] = useState(null)
 
   const hasLoaded = useRef(false)
 
@@ -526,10 +532,52 @@ export default function Payments() {
           ).order("id")
         )
 
+        // Load bill-wise splits separately. A multi-bill payment has one
+        // payments row, while its individual bill amounts live in payment_allocations.
+        const paymentIds = rows.map((payment) => payment.id).filter(Boolean)
+        let allocationRows = []
+        if (paymentIds.length) {
+          allocationRows = await fetchAllRows(() =>
+            supabase
+              .from("payment_allocations")
+              .select("payment_id, bill_id, amount")
+              .eq("shop_id", shopId)
+              .in("payment_id", paymentIds)
+          )
+        }
+
+        const billIds = [...new Set(allocationRows.map((item) => item.bill_id).filter(Boolean))]
+        let allocationBills = []
+        if (billIds.length) {
+          allocationBills = await fetchAllRows(() =>
+            supabase
+              .from("bills")
+              .select("id, bill_number")
+              .eq("shop_id", shopId)
+              .in("id", billIds)
+          )
+        }
+
+        const billMap = new Map(allocationBills.map((bill) => [bill.id, bill]))
+        const allocationsByPayment = new Map()
+        allocationRows.forEach((allocation) => {
+          const list = allocationsByPayment.get(allocation.payment_id) || []
+          list.push({
+            ...allocation,
+            bills: billMap.get(allocation.bill_id) || null,
+          })
+          allocationsByPayment.set(allocation.payment_id, list)
+        })
+
+        const enrichedRows = rows.map((payment) => ({
+          ...payment,
+          allocations: allocationsByPayment.get(payment.id) || [],
+        }))
+
         // A newer request has started: ignore this result
         if (requestId !== paymentRequest.current) return
 
-        setPayments(rows)
+        setPayments(enrichedRows)
         setLastUpdated(new Date())
         hasLoaded.current = true
       } catch (error) {
@@ -579,38 +627,51 @@ export default function Payments() {
     loadCustomers()
   }, [loadCustomers])
 
-  // Show how much the selected customer still owes while recording a payment
+  // Load every pending bill for the selected customer.
   useEffect(() => {
     if (!dialogOpen || !form.customer_id || !shopId) {
-      setCustomerDue(null)
+      setPendingBills([])
+      setBillAllocations({})
+      setBillLoadError("")
+      setBillsLoading(false)
       return
     }
 
     let ignore = false
-    setCustomerDue(null)
+    setBillsLoading(true)
+    setBillLoadError("")
+    setPendingBills([])
+    setBillAllocations({})
 
-    async function loadCustomerDue() {
+    async function loadPendingBills() {
       try {
         const rows = await fetchAllRows(() =>
           supabase
             .from("bills")
-            .select("id, amount_due")
+            .select(
+              "id, bill_number, bill_date, grand_total, amount_paid, amount_due, payment_status, due_date"
+            )
             .eq("shop_id", shopId)
             .eq("customer_id", form.customer_id)
             .gt("amount_due", 0)
-            .order("id")
+            .order("bill_date", { ascending: true })
+            .order("id", { ascending: true })
         )
+
         if (ignore) return
-        setCustomerDue({
-          amount: rows.reduce((total, bill) => total + num(bill.amount_due), 0),
-          count: rows.length,
-        })
-      } catch {
-        if (!ignore) setCustomerDue(null)
+        setPendingBills(rows)
+        setBillAllocations(
+          Object.fromEntries(rows.map((bill) => [bill.id, ""]))
+        )
+      } catch (error) {
+        if (ignore) return
+        setBillLoadError(error?.message || "Could not load pending bills.")
+      } finally {
+        if (!ignore) setBillsLoading(false)
       }
     }
 
-    loadCustomerDue()
+    loadPendingBills()
     return () => {
       ignore = true
     }
@@ -619,6 +680,35 @@ export default function Payments() {
   /* --------------------------------------------------
      DERIVED DATA
   -------------------------------------------------- */
+
+  const billAllocatedTotal = useMemo(
+    () =>
+      Number(
+        pendingBills
+          .reduce(
+            (total, bill) =>
+              total + Number(num(billAllocations[bill.id]).toFixed(2)),
+            0
+          )
+          .toFixed(2)
+      ),
+    [pendingBills, billAllocations]
+  )
+
+  const advanceValue = num(advanceAmount)
+  const enteredAmount = Number((billAllocatedTotal + advanceValue).toFixed(2))
+  const selectedAllocations = useMemo(
+    () =>
+      pendingBills
+        .map((bill) => ({
+          bill_id: bill.id,
+          bill_number: bill.bill_number,
+          amount: Number(num(billAllocations[bill.id]).toFixed(2)),
+          amount_due: num(bill.amount_due),
+        }))
+        .filter((item) => item.amount > 0),
+    [pendingBills, billAllocations]
+  )
 
   const modeOptions = useMemo(() => {
     const set = new Set(PAYMENT_MODES)
@@ -718,6 +808,7 @@ export default function Payments() {
           payment.customers?.name,
           payment.customers?.mobile,
           payment.bills?.bill_number,
+          ...(payment.allocations || []).map((allocation) => allocation.bills?.bill_number),
           payment.payment_mode,
           payment.amount,
           payment.payment_date,
@@ -875,26 +966,42 @@ export default function Payments() {
   }
 
   /* --------------------------------------------------
-     RECORD PAYMENT
+     RECORD PAYMENT WITH BILL-WISE ALLOCATION
   -------------------------------------------------- */
 
   function updateForm(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
+  function updateBillAllocation(billId, value) {
+    setBillAllocations((current) => ({ ...current, [billId]: value }))
+  }
+
   function openDialog() {
     if (customers.length === 0 && !customersLoading) loadCustomers()
     setForm(initialForm())
+    setPendingBills([])
+    setBillAllocations({})
+    setAdvanceAmount("")
+    setBillLoadError("")
+    setPreparedPayment(null)
+    setConfirmationOpen(false)
     setDialogOpen(true)
   }
 
   function closeDialog(open) {
     if (saving) return
     setDialogOpen(open)
-    if (!open) setForm(initialForm())
+    if (!open) {
+      setForm(initialForm())
+      setPendingBills([])
+      setBillAllocations({})
+      setAdvanceAmount("")
+      setBillLoadError("")
+    }
   }
 
-  async function handleSave(event) {
+  function handleSave(event) {
     event.preventDefault()
 
     if (!shopId) {
@@ -907,10 +1014,15 @@ export default function Payments() {
       return
     }
 
-    const amount = Number(form.amount)
+    if (billsLoading) {
+      toast.error("Please wait while pending bills are loading")
+      return
+    }
 
-    if (!form.amount || !Number.isFinite(amount) || amount <= 0) {
-      toast.error("Please enter a valid amount")
+    if (billLoadError) {
+      toast.error("Pending bills could not be loaded", {
+        description: billLoadError,
+      })
       return
     }
 
@@ -919,61 +1031,117 @@ export default function Payments() {
       return
     }
 
-    setSaving(true)
+    if (!form.payment_mode) {
+      toast.error("Please select a payment mode")
+      return
+    }
 
+    for (const bill of pendingBills) {
+      const value = Number(billAllocations[bill.id] || 0)
+      if (!Number.isFinite(value) || value < 0) {
+        toast.error(`Enter a valid amount for bill ${bill.bill_number || ""}`)
+        return
+      }
+      if (Math.abs(value * 100 - Math.round(value * 100)) > 0.001) {
+        toast.error(`Use a maximum of 2 decimal places for bill ${bill.bill_number}`)
+        return
+      }
+      if (value > num(bill.amount_due) + 0.009) {
+        toast.error(`Allocation exceeds pending due for bill ${bill.bill_number}`)
+        return
+      }
+    }
+
+    const advance = Number(advanceAmount || 0)
+    if (!Number.isFinite(advance) || advance < 0) {
+      toast.error("Enter a valid advance amount")
+      return
+    }
+    if (Math.abs(advance * 100 - Math.round(advance * 100)) > 0.001) {
+      toast.error("Use a maximum of 2 decimal places for the advance amount")
+      return
+    }
+
+    const allocations = selectedAllocations.map(({ bill_id, amount }) => ({
+      bill_id,
+      amount,
+    }))
+    const billTotal = Number(
+      allocations.reduce((total, item) => total + item.amount, 0).toFixed(2)
+    )
+    const total = Number((billTotal + advance).toFixed(2))
+
+    if (total <= 0) {
+      toast.error("Enter an amount against at least one bill or as an advance")
+      return
+    }
+
+    setPreparedPayment({
+      shop_id: shopId,
+      customer_id: form.customer_id,
+      customer_name: customers.find((customer) => customer.id === form.customer_id)?.name || "Customer",
+      amount: total,
+      payment_mode: form.payment_mode,
+      payment_date: form.payment_date,
+      notes: form.notes.trim() || null,
+      allocations,
+      allocation_details: selectedAllocations,
+      advance_amount: Number(advance.toFixed(2)),
+    })
+    setConfirmationOpen(true)
+  }
+
+  async function handleConfirmPayment() {
+    if (!preparedPayment || saving) return
+
+    setSaving(true)
     try {
-      const { data: payment, error } = await supabase
-        .from("payments")
-        .insert({
-          shop_id: shopId,
-          customer_id: form.customer_id,
-          amount,
-          payment_mode: form.payment_mode,
-          payment_date: form.payment_date,
-          is_advance: form.is_advance,
-          notes: form.notes.trim() || null,
-        })
-        .select()
-        .single()
+      const { error } = await supabase.rpc(
+        "record_payment_with_allocations",
+        {
+          p_shop_id: preparedPayment.shop_id,
+          p_customer_id: preparedPayment.customer_id,
+          p_amount: preparedPayment.amount,
+          p_payment_mode: preparedPayment.payment_mode,
+          p_payment_date: preparedPayment.payment_date,
+          p_notes: preparedPayment.notes,
+          p_allocations: preparedPayment.allocations,
+          p_advance_amount: preparedPayment.advance_amount,
+        }
+      )
 
       if (error) throw error
 
-      if (form.is_advance) {
-        const { error: advanceError } = await supabase.from("customer_advances").insert({
-          shop_id: shopId,
-          customer_id: form.customer_id,
-          amount,
-          remaining_amount: amount,
-          payment_id: payment.id,
-        })
-
-        if (advanceError) {
-          toast.error("Payment saved, but the advance could not be created", {
-            description: advanceError.message,
-          })
-          setDialogOpen(false)
-          setForm(initialForm())
-          await loadPayments(true)
-          return
-        }
-      }
-
-      toast.success(form.is_advance ? "Advance recorded" : "Payment recorded", {
-        description: `${formatCurrency(amount)} received via ${form.payment_mode}`,
+      toast.success("Payment recorded successfully", {
+        description: `${formatCurrency(preparedPayment.amount)} received via ${preparedPayment.payment_mode}`,
       })
 
+      setConfirmationOpen(false)
+      setPreparedPayment(null)
       setDialogOpen(false)
       setForm(initialForm())
+      setPendingBills([])
+      setBillAllocations({})
+      setAdvanceAmount("")
       await loadPayments(true)
     } catch (error) {
-      toast.error(error?.message || "Failed to record payment")
+      console.error("Record payment error:", error)
+      toast.error("Could not record payment", {
+        description: error?.message || "Please try again.",
+      })
     } finally {
       setSaving(false)
     }
   }
 
+  function returnToPaymentForm() {
+    if (saving) return
+    setConfirmationOpen(false)
+    setPreparedPayment(null)
+  }
+
   /* --------------------------------------------------
-     DELETE A SINGLE PAYMENT
+     DELETE PAYMENT AND RESTORE BILL BALANCES
   -------------------------------------------------- */
 
   async function handleDeletePayment() {
@@ -983,30 +1151,45 @@ export default function Payments() {
     setDeletingPaymentId(payment.id)
 
     try {
-      // Remove any advance record linked to this payment first.
-      if (payment.is_advance) {
-        const { error: advanceError } = await supabase
-          .from("customer_advances")
-          .delete()
-          .eq("payment_id", payment.id)
-          .eq("shop_id", shopId)
-
-        if (advanceError) throw advanceError
+      if (payment.is_refund) {
+        throw new Error(
+          "Refund deletion is not supported by this payment reversal function."
+        )
       }
 
-      const { error } = await supabase
-        .from("payments")
-        .delete()
-        .eq("id", payment.id)
+      // Prevent deleting an advance that has already been adjusted in bills.
+      const { data: advances, error: advanceCheckError } = await supabase
+        .from("customer_advances")
+        .select("amount, remaining_amount")
+        .eq("payment_id", payment.id)
         .eq("shop_id", shopId)
 
-      if (error) throw error
+      if (advanceCheckError) throw advanceCheckError
 
-      setPayments((current) => current.filter((item) => item.id !== payment.id))
+      const consumedAdvance = (advances || []).some(
+        (item) =>
+          num(item.remaining_amount) + 0.009 < num(item.amount)
+      )
+
+      if (consumedAdvance) {
+        throw new Error(
+          "This payment includes an advance already adjusted in a bill. It cannot be deleted safely until that adjustment is reversed."
+        )
+      }
+
+      const { data, error } = await supabase.rpc(
+        "delete_payment_and_restore_balances",
+        { p_payment_id: payment.id }
+      )
+
+      if (error) throw error
+      if (data === false) throw new Error("Payment could not be deleted.")
+
       setPaymentToDelete(null)
-      toast.success("Payment deleted", {
+      toast.success("Payment deleted and bill balances restored", {
         description: `${formatCurrency(payment.amount)} payment record has been deleted.`,
       })
+      await loadPayments(true)
     } catch (error) {
       console.error("Delete payment error:", error)
       toast.error("Could not delete payment", {
@@ -1044,7 +1227,6 @@ export default function Payments() {
 
   const labelSuffix = ` (${shortLabel})`
   const modeTotal = summary.modes.reduce((total, m) => total + m.amount, 0)
-  const enteredAmount = Number(form.amount)
 
   /* --------------------------------------------------
      MAIN UI
@@ -1196,7 +1378,7 @@ export default function Payments() {
             type="button"
             onClick={openDialog}
             disabled={customersLoading}
-            className="h-11 gap-2 rounded-xl border border-violet-200 bg-white/90 px-5 text-sm font-medium text-slate-700 shadow-sm transition-all hover:bg-violet-50 disabled:opacity-50"
+            className="h-11 gap-2 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-violet-50 hover:border-violet-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/30 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-700"
           >
             <Plus className="h-5 w-5" aria-hidden="true" />
             Record payment
@@ -1558,17 +1740,25 @@ export default function Payments() {
                               {payment.payment_mode || "—"}
                             </td>
 
-                            <td className="whitespace-nowrap px-3 py-3 text-xs font-medium text-slate-600">
-                              {payment.bill_id && payment.bills?.bill_number ? (
-                                <Link
-                                  to={`/bills/${payment.bill_id}`}
-                                  className="hover:text-emerald-700 hover:underline"
-                                >
+                            <td className="px-3 py-3 text-xs font-medium text-slate-600">
+                              {payment.allocations?.length ? (
+                                <div className="flex flex-col items-start gap-1.5">
+                                  {payment.allocations.map((allocation) => (
+                                    <Link
+                                      key={`${payment.id}-${allocation.bill_id}`}
+                                      to={`/bills/${allocation.bill_id}`}
+                                      className="whitespace-nowrap rounded-md px-1.5 py-0.5 hover:bg-violet-50 hover:text-violet-700 hover:underline"
+                                    >
+                                      {allocation.bills?.bill_number || "Bill"}
+                                    </Link>
+                                  ))}
+                                  {payment.is_advance && <span className="text-[10px] text-slate-400">+ Advance</span>}
+                                </div>
+                              ) : payment.bill_id && payment.bills?.bill_number ? (
+                                <Link to={`/bills/${payment.bill_id}`} className="hover:text-violet-700 hover:underline">
                                   {payment.bills.bill_number}
                                 </Link>
-                              ) : (
-                                payment.bills?.bill_number || "—"
-                              )}
+                              ) : "—"}
                             </td>
 
                             <td className="px-3 py-3">
@@ -1585,8 +1775,20 @@ export default function Payments() {
                               </div>
                             </td>
 
-                            <td className="whitespace-nowrap px-3 py-3 text-right text-xs">
-                              <AmountText payment={payment} />
+                            <td className="px-3 py-3 text-right text-xs">
+                              {payment.allocations?.length ? (
+                                <div className="flex flex-col items-end gap-1.5">
+                                  {payment.allocations.map((allocation) => (
+                                    <span key={`${payment.id}-amount-${allocation.bill_id}`} className="whitespace-nowrap font-semibold tabular-nums text-emerald-700">
+                                      {formatCurrency(allocation.amount)}
+                                    </span>
+                                  ))}
+                                  {payment.is_advance && <span className="text-[10px] font-medium text-slate-500">Advance included</span>}
+                                  <span className="border-t border-dashed border-slate-200 pt-1 font-bold text-slate-800">
+                                    Total {formatCurrency(payment.amount)}
+                                  </span>
+                                </div>
+                              ) : <AmountText payment={payment} />}
                             </td>
 
                             <td className="px-3 py-3">
@@ -1667,16 +1869,34 @@ export default function Payments() {
                               </p>
                             </div>
                           </Link>
-                          <AmountText payment={payment} className="shrink-0 text-sm" />
+                          {payment.allocations?.length ? (
+                            <div className="shrink-0 text-right">
+                              <p className="text-sm font-bold tabular-nums text-slate-800">{formatCurrency(payment.amount)}</p>
+                              <p className="text-[10px] text-slate-500">{payment.allocations.length} bill split(s)</p>
+                            </div>
+                          ) : <AmountText payment={payment} className="shrink-0 text-sm" />}
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2">
                           <TypePill type={type} />
-                          {payment.bills?.bill_number && (
-                            <span className="text-xs font-medium text-slate-600">
-                              Bill {payment.bills.bill_number}
-                            </span>
-                          )}
+                          {payment.allocations?.length ? (
+                            <div className="w-full rounded-xl border border-violet-100 bg-violet-50/50 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+                              <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">Bill-wise payment</p>
+                              <div className="space-y-2">
+                                {payment.allocations.map((allocation) => (
+                                  <div key={`${payment.id}-mobile-${allocation.bill_id}`} className="flex items-center justify-between gap-3 text-xs">
+                                    <Link to={`/bills/${allocation.bill_id}`} className="font-semibold text-slate-700 hover:text-violet-700 hover:underline dark:text-slate-200">
+                                      {allocation.bills?.bill_number || "Bill"}
+                                    </Link>
+                                    <span className="font-bold tabular-nums text-emerald-700 dark:text-emerald-400">{formatCurrency(allocation.amount)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                              {payment.is_advance && <p className="mt-2 border-t border-violet-100 pt-2 text-[11px] text-slate-500">Includes a customer advance</p>}
+                            </div>
+                          ) : payment.bills?.bill_number ? (
+                            <span className="text-xs font-medium text-slate-600">Bill {payment.bills.bill_number}</span>
+                          ) : null}
                           {payment.notes && (
                             <span className="min-w-0 truncate text-xs text-slate-500">
                               {payment.notes}
@@ -2008,7 +2228,7 @@ export default function Payments() {
           if (!open && !deletingPaymentId) setPaymentToDelete(null)
         }}
       >
-        <DialogContent className="rounded-[20px] border-rose-100 bg-white p-0 sm:max-w-[420px]">
+        <DialogContent className="rounded-[22px] border border-violet-100 bg-white p-0 shadow-[0_18px_55px_rgba(35,28,75,0.16)] dark:border-slate-700 dark:bg-slate-900 sm:max-w-[420px]">
           <DialogHeader className="space-y-2 border-b border-rose-100 px-6 pb-5 pt-6">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-50 text-rose-600">
               <Trash2 className="h-5 w-5" aria-hidden="true" />
@@ -2017,7 +2237,7 @@ export default function Payments() {
               Delete this payment?
             </DialogTitle>
             <DialogDescription className="text-sm leading-6 text-slate-500">
-              This will permanently delete only this payment record. This action cannot be undone.
+              This will delete the payment, restore its bill allocations, and remove any unused linked advance. Refunds and already-adjusted advances cannot be deleted here.
             </DialogDescription>
           </DialogHeader>
 
@@ -2038,13 +2258,13 @@ export default function Payments() {
             </div>
           )}
 
-          <DialogFooter className="flex-col-reverse gap-2 border-t border-[#eeecf5] px-6 py-4 sm:flex-row">
+          <DialogFooter className="flex-col-reverse gap-2 border-t border-violet-100 bg-white px-5 py-4 dark:border-slate-700 dark:bg-slate-900 sm:flex-row sm:px-7">
             <Button
               type="button"
               variant="outline"
               onClick={() => setPaymentToDelete(null)}
               disabled={!!deletingPaymentId}
-              className="h-11 rounded-xl border-violet-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-violet-50"
+              className="h-10 min-w-[112px] rounded-xl border border-violet-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-violet-300 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/25 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:bg-slate-700"
             >
               Cancel
             </Button>
@@ -2052,7 +2272,7 @@ export default function Payments() {
               type="button"
               onClick={handleDeletePayment}
               disabled={!paymentToDelete || !!deletingPaymentId}
-              className="h-11 gap-2 rounded-xl bg-rose-600 px-5 text-sm font-semibold text-white hover:bg-rose-700"
+              className="h-10 min-w-[148px] gap-2 rounded-xl border border-violet-200 bg-white px-5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-violet-300 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/25 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:bg-slate-700"
             >
               {deletingPaymentId ? (
                 <>
@@ -2071,219 +2291,428 @@ export default function Payments() {
       </Dialog>
 
       {/* RECORD PAYMENT DIALOG */}
-
       <Dialog open={dialogOpen} onOpenChange={closeDialog}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-[20px] border-white/80 bg-white p-0 sm:max-w-[480px]">
-          <DialogHeader className="space-y-1 border-b border-[#eeecf5] px-6 pb-5 pt-6">
-            <DialogTitle className="text-xl font-bold tracking-tight text-[#171a36]">
-              Record payment
-            </DialogTitle>
-            <DialogDescription>Enter the customer payment details below.</DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleSave} className="space-y-5 px-6 py-5">
-            {/* Customer */}
-            <div className="space-y-2">
-              <Label>
-                Customer <span className="text-rose-500">*</span>
-              </Label>
-
-              <Select
-                value={form.customer_id}
-                onValueChange={(value) => updateForm("customer_id", value)}
-                disabled={customersLoading || saving}
-              >
-                <SelectTrigger className="h-11 rounded-xl border-violet-200 bg-white shadow-sm focus-visible:border-emerald-500 focus-visible:ring-emerald-500/20">
-                  <SelectValue
-                    placeholder={customersLoading ? "Loading customers..." : "Select customer"}
-                  />
-                </SelectTrigger>
-
-                <SelectContent>
-                  {customers.map((customer) => (
-                    <SelectItem key={customer.id} value={customer.id}>
-                      <div className="flex items-center gap-2.5">
-                        <CustomerAvatar
-                          name={customer.name}
-                          photoUrl={customer.photo_url}
-                          className="h-8 w-8"
-                        />
-                        <div className="flex min-w-0 flex-col">
-                          <span className="truncate">{customer.name}</span>
-                          {customer.mobile && (
-                            <span className="text-xs text-slate-400">{customer.mobile}</span>
-                          )}
-                        </div>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              {!customersLoading && customers.length === 0 && (
-                <p className="text-xs text-rose-600">
-                  No active customers found. Add a customer first.
-                </p>
-              )}
-
-              {customerDue && customerDue.amount > 0 && (
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-100 bg-amber-50/70 px-3.5 py-2.5">
-                  <p className="text-xs text-amber-800">
-                    Owes{" "}
-                    <span className="font-bold tabular-nums">
-                      {formatCurrency(customerDue.amount)}
-                    </span>{" "}
-                    on {customerDue.count} {customerDue.count === 1 ? "bill" : "bills"}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => updateForm("amount", String(customerDue.amount))}
-                    className="shrink-0 rounded-full border border-amber-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-800 transition-all hover:border-amber-300 hover:bg-amber-50 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
-                  >
-                    Use this amount
-                  </button>
+        <DialogContent className="max-h-[94dvh] overflow-hidden rounded-[26px] border border-violet-100/80 bg-[#fbfaff] dark:border-slate-700 dark:bg-slate-900 p-0 shadow-[0_24px_80px_rgba(35,28,75,0.22)] sm:max-w-[760px]">
+          <div className="flex max-h-[94dvh] flex-col">
+            <DialogHeader className="relative shrink-0 overflow-hidden border-b border-violet-100 bg-white dark:border-slate-700 dark:bg-slate-900 px-5 pb-5 pt-5 text-left sm:px-7 sm:pt-6">
+              <div className="pointer-events-none absolute -right-12 -top-20 h-48 w-48 rounded-full bg-violet-100/60 dark:bg-violet-900/20 blur-3xl" />
+              <div className="relative flex items-start gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-violet-50 text-violet-700 ring-1 ring-violet-100 dark:bg-slate-800 dark:text-violet-300 dark:ring-slate-700">
+                  <Receipt className="h-6 w-6" strokeWidth={1.8} />
                 </div>
-              )}
-            </div>
-
-            {/* Amount and mode */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="payment-amount">
-                  Amount <span className="text-rose-500">*</span>
-                </Label>
-                <Input
-                  id="payment-amount"
-                  type="number"
-                  inputMode="decimal"
-                  min="0.01"
-                  step="0.01"
-                  placeholder="Enter amount"
-                  value={form.amount}
-                  onChange={(e) => updateForm("amount", e.target.value)}
-                  className="h-11 rounded-xl border-violet-200 bg-white shadow-sm focus-visible:border-emerald-500 focus-visible:ring-emerald-500/20"
-                  required
-                  disabled={saving}
-                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <DialogTitle className="text-xl font-bold tracking-tight text-[#171a36] dark:text-slate-100 sm:text-[22px]">
+                      Record payment
+                    </DialogTitle>
+                    <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-violet-700 dark:border-slate-700 dark:bg-slate-800 dark:text-violet-300">
+                      New transaction
+                    </span>
+                  </div>
+                  <DialogDescription className="mt-1 max-w-xl text-xs leading-5 text-slate-500 dark:text-slate-400 dark:text-slate-500 sm:text-sm">
+                    Select a customer, allocate the received amount to pending bills, or keep it as an advance.
+                  </DialogDescription>
+                </div>
               </div>
+              <div className="relative mt-5 grid grid-cols-3 gap-2">
+                <div className="rounded-xl border border-violet-100 bg-[#faf9ff] dark:border-slate-700 dark:bg-slate-800 px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Pending bills</p>
+                  <p className="mt-1 text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">{pendingBills.length}</p>
+                </div>
+                <div className="rounded-xl border border-violet-100 bg-[#faf9ff] dark:border-slate-700 dark:bg-slate-800 px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Allocated</p>
+                  <p className="mt-1 truncate text-sm font-bold tabular-nums text-violet-700 dark:text-violet-300">{formatCurrency(billAllocatedTotal)}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Advance</p>
+                  <p className="mt-1 truncate text-sm font-bold tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(advanceValue)}</p>
+                </div>
+              </div>
+            </DialogHeader>
 
-              <div className="space-y-2">
-                <Label>Payment mode</Label>
+            <form id="payment-record-form" onSubmit={handleSave} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5 sm:px-7">
+              {/* CUSTOMER */}
+              <section className="rounded-2xl border border-violet-100 bg-white dark:border-slate-700 dark:bg-slate-900 p-4 shadow-[0_3px_12px_rgba(80,65,130,0.04)] dark:border-slate-700 dark:bg-slate-900 sm:p-5">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-violet-700 dark:text-violet-300">Step 01</p>
+                    <h3 className="mt-1 text-sm font-bold text-[#171a36] dark:text-slate-100">Customer details</h3>
+                  </div>
+                  <Users className="h-5 w-5 text-violet-400" />
+                </div>
+                <Label className="mb-2 block text-xs font-semibold text-slate-600">
+                  Select customer <span className="text-rose-500">*</span>
+                </Label>
                 <Select
-                  value={form.payment_mode}
-                  onValueChange={(value) => updateForm("payment_mode", value)}
-                  disabled={saving}
+                  value={form.customer_id}
+                  onValueChange={(value) => updateForm("customer_id", value)}
+                  disabled={customersLoading || saving}
                 >
-                  <SelectTrigger className="h-11 rounded-xl border-violet-200 bg-white shadow-sm focus-visible:border-emerald-500 focus-visible:ring-emerald-500/20">
-                    <SelectValue />
+                  <SelectTrigger className="h-[50px] rounded-xl border border-violet-200 bg-white px-3 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:text-slate-100 shadow-[0_2px_7px_rgba(80,65,130,0.07)] transition-all placeholder:text-slate-400 dark:text-slate-500 hover:border-violet-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/15 dark:focus:border-violet-400 dark:focus:ring-violet-400/20">
+                    <SelectValue placeholder={customersLoading ? "Loading customers..." : "Choose a customer"} />
                   </SelectTrigger>
-                  <SelectContent>
-                    {PAYMENT_MODES.map((mode) => (
-                      <SelectItem key={mode} value={mode}>
-                        {mode}
+                  <SelectContent className="max-h-[280px]">
+                    {customers.map((customer) => (
+                      <SelectItem key={customer.id} value={customer.id}>
+                        <div className="flex items-center gap-2.5 py-0.5">
+                          <CustomerAvatar name={customer.name} photoUrl={customer.photo_url} className="h-8 w-8" />
+                          <div className="flex min-w-0 flex-col text-left">
+                            <span className="truncate text-sm font-semibold">{customer.name}</span>
+                            {customer.mobile && <span className="text-[11px] text-slate-400 dark:text-slate-500">{customer.mobile}</span>}
+                          </div>
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-            </div>
-
-            {/* Date */}
-            <div className="space-y-2">
-              <Label htmlFor="payment-date">
-                Payment date <span className="text-rose-500">*</span>
-              </Label>
-              <Input
-                id="payment-date"
-                type="date"
-                value={form.payment_date}
-                max={today}
-                onChange={(e) => updateForm("payment_date", e.target.value)}
-                className="h-11 rounded-xl border-violet-200 bg-white shadow-sm focus-visible:border-emerald-500 focus-visible:ring-emerald-500/20"
-                required
-                disabled={saving}
-              />
-            </div>
-
-            {/* Advance */}
-            <label
-              className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition-colors ${
-                form.is_advance
-                  ? "border-emerald-200 bg-emerald-50/60"
-                  : "border-violet-100 bg-[#f9f8ff] hover:bg-violet-50"
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={form.is_advance}
-                onChange={(e) => updateForm("is_advance", e.target.checked)}
-                disabled={saving}
-                className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-emerald-600"
-              />
-              <span>
-                <span className="block text-sm font-semibold text-slate-800">Advance payment</span>
-                <span className="mt-1 block text-xs leading-5 text-slate-500">
-                  Save this amount as customer advance to adjust in future bills.
-                </span>
-              </span>
-            </label>
-
-            {/* Notes */}
-            <div className="space-y-2">
-              <Label htmlFor="payment-notes">Notes</Label>
-              <Textarea
-                id="payment-notes"
-                value={form.notes}
-                onChange={(e) => updateForm("notes", e.target.value)}
-                placeholder="Add payment details (optional)"
-                rows={3}
-                className="resize-none rounded-xl border-violet-200 bg-white shadow-sm focus-visible:border-emerald-500 focus-visible:ring-emerald-500/20"
-                disabled={saving}
-              />
-            </div>
-
-            {/* Amount preview */}
-            {Number.isFinite(enteredAmount) && enteredAmount > 0 && (
-              <div className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3">
-                <span className="text-xs font-medium text-emerald-800">
-                  {form.is_advance ? "Advance to record" : "Amount to record"}
-                </span>
-                <span className="text-lg font-bold tabular-nums text-slate-900">
-                  {formatCurrency(enteredAmount)}
-                </span>
-              </div>
-            )}
-
-            <DialogFooter className="-mx-6 flex-col-reverse gap-2 border-t border-[#eeecf5] px-6 pb-6 pt-4 sm:flex-row">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => closeDialog(false)}
-                disabled={saving}
-                className="h-11 gap-2 rounded-xl border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50 transition-all"
-              >
-                Cancel
-              </Button>
-
-              <Button
-                type="submit"
-                disabled={saving || customersLoading || customers.length === 0}
-                className="h-11 rounded-xl border border-violet-200 bg-white/90 px-6 text-sm font-medium text-slate-700 shadow-sm transition-all hover:bg-violet-50 disabled:opacity-50"
-              >
-                {saving ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
-                    Save payment
-                  </>
+                {!customersLoading && customers.length === 0 && (
+                  <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">No active customers found. Add a customer first.</p>
                 )}
-              </Button>
-            </DialogFooter>
-          </form>
+                {form.customer_id && !billsLoading && pendingBills.length > 0 && (
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-100 bg-amber-50/70 px-3.5 py-3">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
+                      <span className="text-xs font-medium text-amber-800">Outstanding balance</span>
+                    </div>
+                    <span className="text-sm font-bold tabular-nums text-amber-800">
+                      {formatCurrency(pendingBills.reduce((total, bill) => total + num(bill.amount_due), 0))}
+                    </span>
+                  </div>
+                )}
+              </section>
+
+              {/* BILL ALLOCATION */}
+              <section className="overflow-hidden rounded-2xl border border-violet-100 bg-white dark:border-slate-700 dark:bg-slate-900 shadow-[0_3px_12px_rgba(80,65,130,0.04)]">
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-violet-100 bg-[#faf9ff] dark:border-slate-700 dark:bg-slate-800 px-4 py-4 sm:px-5">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700 dark:bg-slate-800 dark:text-violet-300">
+                      <Receipt className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-violet-700">Step 02</p>
+                      <h3 className="mt-0.5 text-sm font-bold text-[#171a36] dark:text-slate-100">Bill-wise allocation</h3>
+                      <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400 dark:text-slate-500">Add full or partial amounts against individual pending bills.</p>
+                    </div>
+                  </div>
+                  <span className="rounded-full border border-violet-200 bg-white px-3 py-1.5 text-[11px] font-bold text-violet-700 dark:border-slate-600 dark:bg-slate-800 dark:text-violet-300">
+                    {pendingBills.length} {pendingBills.length === 1 ? "bill" : "bills"}
+                  </span>
+                </div>
+
+                <div className="space-y-3 p-4 sm:p-5">
+                  {billsLoading ? (
+                    <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-violet-200 bg-[#fcfbff] dark:border-slate-700 dark:bg-slate-800 px-3 py-8 text-xs font-medium text-slate-500 dark:text-slate-400 dark:text-slate-500">
+                      <Loader2 className="h-4 w-4 animate-spin text-violet-600 dark:text-violet-300" /> Loading pending bills...
+                    </div>
+                  ) : billLoadError ? (
+                    <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-xs text-rose-700">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> {billLoadError}
+                    </div>
+                  ) : !form.customer_id ? (
+                    <div className="rounded-xl border border-dashed border-violet-200 bg-[#fcfbff] dark:border-slate-700 dark:bg-slate-800 px-3 py-8 text-center">
+                      <Users className="mx-auto h-6 w-6 text-violet-300" />
+                      <p className="mt-2 text-xs font-medium text-slate-500 dark:text-slate-400 dark:text-slate-500">Choose a customer to see their pending bills.</p>
+                    </div>
+                  ) : pendingBills.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-violet-200 bg-[#fcfbff] dark:border-slate-700 dark:bg-slate-800 px-3 py-7 text-center">
+                      <CheckCircle2 className="mx-auto h-6 w-6 text-emerald-500" />
+                      <p className="mt-2 text-sm font-semibold text-slate-700">No pending bills</p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">You can still record an advance for this customer.</p>
+                    </div>
+                  ) : (
+                    <div className="max-h-[310px] space-y-2.5 overflow-y-auto pr-1">
+                      {pendingBills.map((bill, index) => {
+                        const due = num(bill.amount_due)
+                        const allocated = num(billAllocations[bill.id])
+                        const progress = bill.grand_total > 0 ? Math.min(100, Math.round((num(bill.amount_paid) / num(bill.grand_total)) * 100)) : 0
+                        return (
+                          <div key={bill.id} className={`rounded-xl border p-3.5 transition-colors ${allocated > 0 ? "border-violet-200 bg-violet-50/50 dark:border-violet-900 dark:bg-violet-950/30" : "border-violet-100 bg-white hover:border-violet-200 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600"}`}>
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-50 text-[10px] font-bold text-violet-700 dark:bg-slate-800 dark:text-violet-300">{index + 1}</span>
+                                  <p className="truncate text-sm font-bold text-slate-800 dark:text-slate-100">{bill.bill_number || "Bill"}</p>
+                                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Pending</span>
+                                </div>
+                                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400 dark:text-slate-500">
+                                  <span>{bill.bill_date ? formatDate(bill.bill_date) : "Date unavailable"}</span>
+                                  <span>Total {formatCurrency(bill.grand_total)}</span>
+                                  <span>Paid {formatCurrency(bill.amount_paid)}</span>
+                                </div>
+                                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
+                                  <div className="h-full rounded-full bg-violet-500 transition-all" style={{ width: `${progress}%` }} />
+                                </div>
+                                <p className="mt-1.5 text-[11px] font-semibold text-amber-700">Remaining due: {formatCurrency(due)}</p>
+                              </div>
+                              <div className="w-full shrink-0 sm:w-[156px]">
+                                <Label htmlFor={`allocation-${bill.id}`} className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">Receive amount</Label>
+                                <div className="relative">
+                                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 dark:text-slate-500">₹</span>
+                                  <Input
+                                    id={`allocation-${bill.id}`}
+                                    type="number"
+                                    inputMode="decimal"
+                                    min="0"
+                                    max={due}
+                                    step="0.01"
+                                    placeholder="0.00"
+                                    value={billAllocations[bill.id] ?? ""}
+                                    onChange={(event) => updateBillAllocation(bill.id, event.target.value)}
+                                    disabled={saving}
+                                    className="h-10 rounded-xl border border-violet-200 bg-white pl-7 text-right text-sm font-semibold tabular-nums shadow-[0_2px_6px_rgba(80,65,130,0.06)] transition-all placeholder:text-slate-400 dark:text-slate-500 focus-visible:border-violet-500 focus-visible:ring-2 focus-visible:ring-violet-500/15 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus-visible:border-violet-400 dark:focus-visible:ring-violet-400/20"
+                                  />
+                                </div>
+                                <div className="mt-1.5 flex items-center justify-between gap-2">
+                                  <button type="button" onClick={() => updateBillAllocation(bill.id, String(due))} disabled={saving} className="inline-flex h-7 items-center justify-center rounded-lg border border-violet-200 bg-white dark:border-slate-700 dark:bg-slate-900 px-2.5 text-[10px] font-bold text-violet-700 dark:text-violet-300 shadow-sm transition-colors hover:border-emerald-300 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 disabled:opacity-50">Pay full</button>
+                                  <button type="button" onClick={() => updateBillAllocation(bill.id, "")} disabled={saving || !allocated} className="inline-flex h-7 items-center justify-center rounded-lg border border-violet-100 bg-white dark:border-slate-700 dark:bg-slate-900 px-2.5 text-[10px] font-semibold text-slate-500 dark:text-slate-400 dark:text-slate-500 shadow-sm transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/20 disabled:opacity-40">Clear</button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between gap-3 rounded-xl bg-[#f7f5ff] px-3.5 py-3 dark:bg-slate-800">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-700">Bill allocation total</p>
+                      <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400 dark:text-slate-500">{selectedAllocations.length} bill(s) selected</p>
+                    </div>
+                    <p className="text-base font-bold tabular-nums text-violet-700 dark:text-violet-300">{formatCurrency(billAllocatedTotal)}</p>
+                  </div>
+                </div>
+              </section>
+
+              {/* ADVANCE */}
+              <section className="rounded-2xl border border-violet-100 bg-white dark:border-slate-700 dark:bg-slate-900 p-4 shadow-[0_3px_12px_rgba(80,65,130,0.04)] dark:border-slate-700 dark:bg-slate-900 sm:p-5">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-slate-700 dark:text-slate-200 ring-1 ring-blue-100">
+                    <Wallet className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-700 dark:text-slate-200">Step 03 · Optional</p>
+                    <h3 className="mt-0.5 text-sm font-bold text-[#171a36] dark:text-slate-100">Customer advance</h3>
+                    <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400 dark:text-slate-500">Keep an amount aside for adjustment against future bills.</p>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <Label htmlFor="payment-advance" className="mb-1.5 block text-xs font-semibold text-slate-600">Advance amount</Label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400 dark:text-slate-500">₹</span>
+                    <Input id="payment-advance" type="number" inputMode="decimal" min="0" step="0.01" placeholder="0.00" value={advanceAmount} onChange={(event) => setAdvanceAmount(event.target.value)} disabled={saving} className="h-11 rounded-xl border border-violet-200 bg-white pl-7 text-sm font-semibold tabular-nums shadow-[0_2px_7px_rgba(80,65,130,0.07)] transition-all placeholder:text-slate-400 dark:text-slate-500 focus-visible:border-violet-500 focus-visible:ring-2 focus-visible:ring-violet-500/15 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus-visible:border-violet-400 dark:focus-visible:ring-violet-400/20" />
+                  </div>
+                </div>
+              </section>
+
+              {/* PAYMENT DETAILS */}
+              <section className="rounded-2xl border border-violet-100 bg-white dark:border-slate-700 dark:bg-slate-900 p-4 shadow-[0_3px_12px_rgba(80,65,130,0.04)] dark:border-slate-700 dark:bg-slate-900 sm:p-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4 text-violet-600" />
+                  <h3 className="text-sm font-bold text-[#171a36] dark:text-slate-100">Payment details</h3>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="payment-date" className="text-xs font-semibold text-slate-600">Payment date <span className="text-rose-500">*</span></Label>
+                    <Input id="payment-date" type="date" value={form.payment_date} max={today} onChange={(event) => updateForm("payment_date", event.target.value)} required disabled={saving} className="h-11 rounded-xl border border-violet-200 bg-white px-3 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:text-slate-100 shadow-[0_2px_7px_rgba(80,65,130,0.07)] transition-all hover:border-violet-300 focus-visible:border-violet-500 focus-visible:ring-2 focus-visible:ring-violet-500/15 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus-visible:border-violet-400 dark:focus-visible:ring-violet-400/20" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-600">Payment mode <span className="text-rose-500">*</span></Label>
+                    <Select value={form.payment_mode} onValueChange={(value) => updateForm("payment_mode", value)} disabled={saving}>
+                      <SelectTrigger className="h-11 rounded-xl border border-violet-200 bg-white px-3 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:text-slate-100 shadow-[0_2px_7px_rgba(80,65,130,0.07)] transition-all hover:border-violet-300 focus:ring-2 focus:ring-violet-500/15 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus:ring-violet-400/20"><SelectValue placeholder="Choose payment mode" /></SelectTrigger>
+                      <SelectContent>{PAYMENT_MODES.map((mode) => <SelectItem key={mode} value={mode}>{mode}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="mt-3 space-y-1.5">
+                  <Label htmlFor="payment-notes" className="text-xs font-semibold text-slate-600">Notes <span className="font-normal text-slate-400 dark:text-slate-500">(optional)</span></Label>
+                  <Textarea id="payment-notes" value={form.notes} onChange={(event) => updateForm("notes", event.target.value)} placeholder="Add reference number, transaction note or other details..." rows={2} disabled={saving} className="min-h-[76px] resize-y rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-sm text-slate-800 dark:text-slate-100 shadow-[0_2px_7px_rgba(80,65,130,0.06)] transition-all placeholder:text-slate-400 dark:text-slate-500 hover:border-violet-300 focus-visible:border-violet-500 focus-visible:ring-2 focus-visible:ring-violet-500/15 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus-visible:border-violet-400 dark:focus-visible:ring-violet-400/20" />
+                </div>
+              </section>
+
+              {/* LIVE TOTAL */}
+              <section className="overflow-hidden rounded-2xl border border-violet-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+                <div className="flex items-center justify-between gap-3 border-b border-violet-100 dark:border-slate-700 px-4 py-3">
+                  <div>
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-100">Payment summary</p>
+                    <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400 dark:text-slate-500">Live total based on your allocations</p>
+                  </div>
+                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-violet-700 dark:text-violet-300">Live preview</span>
+                </div>
+                <div className="space-y-2 px-4 py-3">
+                  <div className="flex justify-between gap-3 text-xs"><span className="text-slate-500 dark:text-slate-400 dark:text-slate-500">Bill allocation</span><span className="font-semibold tabular-nums text-slate-700">{formatCurrency(billAllocatedTotal)}</span></div>
+                  <div className="flex justify-between gap-3 text-xs"><span className="text-slate-500 dark:text-slate-400 dark:text-slate-500">Customer advance</span><span className="font-semibold tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(advanceValue)}</span></div>
+                </div>
+                <div className="flex items-center justify-between gap-3 bg-violet-100 px-4 py-3.5 text-slate-800 dark:bg-slate-800 dark:text-slate-100">
+                  <span className="text-sm font-semibold">Total received</span>
+                  <span className="text-xl font-bold tabular-nums">{formatCurrency(enteredAmount)}</span>
+                </div>
+              </section>
+
+              <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-white/70 px-3 py-2.5">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
+                <p className="text-[10px] leading-4 text-slate-500 dark:text-slate-400 dark:text-slate-500">Review all bill allocations carefully. The payment will be saved only after the next confirmation step.</p>
+              </div>
+            </form>
+
+            <div className="shrink-0 border-t border-violet-100 bg-white px-5 py-4 dark:border-slate-700 dark:bg-slate-900 sm:px-7">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button type="button" variant="outline" onClick={() => closeDialog(false)} disabled={saving} className="h-10 min-w-[104px] rounded-xl border border-violet-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-violet-300 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/25 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:bg-slate-700">
+                  Cancel
+                </Button>
+                <Button type="submit" form="payment-record-form" disabled={saving || customersLoading || customers.length === 0 || billsLoading || !!billLoadError} className="h-11 min-w-[176px] gap-2 rounded-xl border border-violet-200 bg-white px-5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-violet-300 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/25 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:bg-slate-700">
+                  <CheckCircle2 className="h-4 w-4" /> Review payment <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* PAYMENT REVIEW / FINAL CONFIRMATION */}
+      <Dialog
+        open={confirmationOpen}
+        onOpenChange={(open) => {
+          if (!open && !saving) returnToPaymentForm()
+        }}
+      >
+        <DialogContent className="max-h-[92dvh] overflow-y-auto rounded-[24px] border border-violet-100 bg-[#fbfaff] p-0 shadow-[0_20px_60px_rgba(35,28,75,0.18)] dark:border-slate-700 dark:bg-slate-900 sm:max-w-[620px]">
+          <DialogHeader className="space-y-2 border-b border-violet-100 bg-white px-5 pb-5 pt-5 dark:border-slate-700 dark:bg-slate-900 sm:px-7 sm:pt-6">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-50 text-violet-700 dark:bg-slate-800 dark:text-violet-300">
+              <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <DialogTitle className="text-xl font-bold tracking-tight text-[#171a36]">
+              Confirm payment
+            </DialogTitle>
+            <DialogDescription>
+              Review the bill-wise allocation and advance amount before saving.
+            </DialogDescription>
+          </DialogHeader>
+
+          {preparedPayment && (
+            <div className="space-y-4 px-5 py-5 sm:px-7">
+              <div className="rounded-xl bg-[#f7f5ff] px-4 py-3">
+                <p className="text-sm font-bold text-slate-800">{preparedPayment.customer_name}</p>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-[11px] font-medium text-slate-500">Payment date</p>
+                  <p className="mt-0.5 text-sm font-semibold text-slate-800">
+                    {formatDate(preparedPayment.payment_date)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[11px] font-medium text-slate-500">Payment mode</p>
+                  <p className="mt-0.5 text-sm font-semibold text-slate-800">
+                    {preparedPayment.payment_mode}
+                  </p>
+                </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                  Bill allocation
+                </h3>
+                {preparedPayment.allocation_details.length > 0 ? (
+                  <div className="divide-y divide-[#eeecf5] rounded-xl border border-violet-100">
+                    {preparedPayment.allocation_details.map((item) => (
+                      <div
+                        key={item.bill_id}
+                        className="flex items-center justify-between gap-3 px-3.5 py-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-800">
+                            {item.bill_number || "Bill"}
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-slate-500">
+                            Pending before payment: {formatCurrency(item.amount_due)}
+                          </p>
+                        </div>
+                        <p className="shrink-0 text-sm font-bold tabular-nums text-emerald-700">
+                          {formatCurrency(item.amount)}
+                        </p>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between gap-3 bg-[#faf9ff] px-3.5 py-3 text-xs">
+                      <span className="font-semibold text-slate-600">Bill allocation total</span>
+                      <span className="font-bold tabular-nums text-slate-900">
+                        {formatCurrency(
+                          preparedPayment.allocation_details.reduce(
+                            (total, item) => total + item.amount,
+                            0
+                          )
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="rounded-xl border border-violet-100 bg-[#faf9ff] px-3.5 py-3 text-xs text-slate-500">
+                    No bill allocation. This payment will be recorded as an advance.
+                  </p>
+                )}
+              </div>
+
+              {preparedPayment.advance_amount > 0 && (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">Customer advance</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      Available for future bill adjustment
+                    </p>
+                  </div>
+                  <p className="text-sm font-bold tabular-nums text-blue-700">
+                    {formatCurrency(preparedPayment.advance_amount)}
+                  </p>
+                </div>
+              )}
+
+              {preparedPayment.notes && (
+                <div className="rounded-xl border border-violet-100 px-3.5 py-3">
+                  <p className="text-[11px] font-semibold text-slate-500">Notes</p>
+                  <p className="mt-1 whitespace-pre-wrap text-xs text-slate-700">
+                    {preparedPayment.notes}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4">
+                <span className="text-sm font-semibold text-emerald-900">Total received</span>
+                <span className="text-xl font-bold tabular-nums text-emerald-800">
+                  {formatCurrency(preparedPayment.amount)}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex-col-reverse gap-2 border-t border-violet-100 bg-white px-5 py-4 dark:border-slate-700 dark:bg-slate-900 sm:flex-row sm:px-7">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={returnToPaymentForm}
+              disabled={saving}
+              className="h-10 min-w-[112px] rounded-xl border border-violet-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-violet-300 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/25 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:bg-slate-700"
+            >
+              Back to edit
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmPayment}
+              disabled={saving || !preparedPayment}
+              className="h-11 min-w-[158px] gap-2 rounded-xl border border-violet-200 bg-white px-5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-violet-300 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/25 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:bg-slate-700"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Saving payment...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="h-4 w-4" />
+                  Confirm & save
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

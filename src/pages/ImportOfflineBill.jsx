@@ -12,17 +12,19 @@ import {
   PAYMENT_MODES,
 } from "@/lib/utils"
 import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import {
-  AlertCircle, ArrowLeft, Camera, Check, CheckCircle2, ChevronDown, ChevronRight,
-  FileImage, FileText, IndianRupee, Loader2, Plus, ScanLine, Search,
-  Sparkles, Trash2, UploadCloud, UserRound, Users, X,CalendarDays,CreditCard,
-  Receipt,} from "lucide-react"
+  AlertCircle, ArrowLeft, CalendarDays, Camera, Check, CheckCircle2, ChevronRight,
+  Copy, CreditCard, FileText, IndianRupee, Lightbulb, Loader2, Plus, Receipt,
+  ScanLine, ShieldCheck, Trash2, UploadCloud, UserRound,
+} from "lucide-react"
 import { toast } from "sonner"
 
+/* ------------------------------------------------------------------ */
+/* Constants & small helpers                                           */
+/* ------------------------------------------------------------------ */
 const MAX_FILE_SIZE = 5 * 1024 * 1024
 const todayString = () => {
   const now = new Date()
@@ -34,10 +36,32 @@ const normalizePhone = (v) => String(v || "").replace(/\D/g, "").slice(-10)
 const clean = (v) => String(v || "").replace(/\s+/g, " ").trim()
 const emptyItem = () => ({ item_name: "", description: "", quantity: "1", unit: "Piece", rate: "0", discount: "0", gst_percent: "0" })
 
+/* Shared look — every input, card and button on this page uses these */
 const inputClass = "h-11 rounded-xl border-violet-200 bg-white text-sm text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-emerald-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
-const panelClass = "rounded-2xl border border-violet-100 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
 const labelClass = "mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300"
+const cardClass = "overflow-hidden rounded-[20px] border border-white/80 bg-white/90 shadow-[0_5px_18px_rgba(80,65,130,0.07)]"
 
+const BTN_BASE = "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:pointer-events-none disabled:opacity-50"
+const BTN_VARIANTS = {
+  primary: "bg-emerald-700 text-white shadow-sm hover:bg-emerald-800",
+  secondary: "border border-violet-200 bg-white text-slate-700 shadow-sm hover:bg-violet-50",
+  ghost: "text-slate-600 hover:bg-violet-100/60",
+  danger: "border border-rose-200 bg-white text-rose-700 shadow-sm hover:bg-rose-50",
+}
+const BTN_SIZES = {
+  md: "h-11 px-4 text-sm",
+  sm: "h-9 px-3 text-xs",
+  icon: "h-9 w-9 text-xs",
+}
+
+/* One button for the whole page: same height, radius, weight and focus ring */
+function Btn({ variant = "secondary", size = "md", className = "", type = "button", ...props }) {
+  return <button type={type} className={`${BTN_BASE} ${BTN_VARIANTS[variant]} ${BTN_SIZES[size]} ${className}`} {...props} />
+}
+
+/* ------------------------------------------------------------------ */
+/* Bill text parsing (unchanged logic)                                 */
+/* ------------------------------------------------------------------ */
 function parseDate(text) {
   const source = String(text || "")
   const labeled = source.match(/(?:bill\s*date|invoice\s*date|dated|date)\s*[:\-]?\s*((?:\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})|(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}))/i)
@@ -167,18 +191,67 @@ async function pdfToText(file, onProgress) {
   return pages.join("\n")
 }
 
-function Field({ label, children }) {
-  return <div className="min-w-0"><Label className={labelClass}>{label}</Label>{children}</div>
-}
-function SectionTitle({ icon: Icon, title, subtitle, action }) {
-  return <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eae7f4] px-4 py-4 sm:px-5">
-    <div className="flex min-w-0 items-center gap-3">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700"><Icon className="h-5 w-5" /></div>
-      <div><h2 className="text-[16px] font-bold tracking-tight text-[#171a36]">{title}</h2>{subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}</div>
-    </div>{action}
-  </div>
+/* ------------------------------------------------------------------ */
+/* Small UI pieces                                                     */
+/* ------------------------------------------------------------------ */
+function Field({ label, hint, children }) {
+  return (
+    <div className="min-w-0">
+      <Label className={labelClass}>{label}</Label>
+      {children}
+      {hint && <p className="mt-1 text-[11px] leading-4 text-slate-500">{hint}</p>}
+    </div>
+  )
 }
 
+function SectionTitle({ icon: Icon, title, subtitle, action }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eae7f4] px-4 py-4 sm:px-5">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700"><Icon className="h-5 w-5" /></div>
+        <div className="min-w-0">
+          <h2 className="text-[16px] font-bold tracking-tight text-[#171a36]">{title}</h2>
+          {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
+        </div>
+      </div>
+      {action}
+    </div>
+  )
+}
+
+function Row({ label, value, strong = false, tone = "" }) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <span className="text-slate-600">{label}</span>
+      <span className={`tabular-nums ${strong ? "font-bold" : "font-semibold"} ${tone || "text-slate-800"}`}>{value}</span>
+    </div>
+  )
+}
+
+function DetectChip({ ok, label }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${
+      ok ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"
+    }`}>
+      {ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+      {label}
+    </span>
+  )
+}
+
+function StatusPill({ status }) {
+  const map = {
+    paid: ["Paid", "border-emerald-200 bg-emerald-50 text-emerald-700"],
+    partial: ["Partial", "border-amber-200 bg-amber-50 text-amber-700"],
+    unpaid: ["Unpaid", "border-rose-200 bg-rose-50 text-rose-700"],
+  }
+  const [text, cls] = map[status] || map.unpaid
+  return <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${cls}`}>{text}</span>
+}
+
+/* ------------------------------------------------------------------ */
+/* Page                                                                */
+/* ------------------------------------------------------------------ */
 export default function ImportOfflineBill() {
   const { currentShop } = useShop()
   const navigate = useNavigate()
@@ -188,6 +261,7 @@ export default function ImportOfflineBill() {
   const [preview, setPreview] = useState("")
   const [ocrText, setOcrText] = useState("")
   const [ocrWarnings, setOcrWarnings] = useState([])
+  const [detected, setDetected] = useState(null)
   const [scanning, setScanning] = useState(false)
   const [progress, setProgress] = useState(0)
   const [customers, setCustomers] = useState([])
@@ -249,7 +323,6 @@ export default function ImportOfflineBill() {
     if (!q) return []
     return customers.filter((c) => c.name?.toLowerCase().includes(q) || normalizePhone(c.mobile).includes(normalizePhone(q)))
   }, [customers, customerQuery])
-  const selectedCustomer = customers.find((c) => c.id === customerId)
   const potentialMatch = useMemo(() => {
     const phone = normalizePhone(customer.mobile)
     if (phone.length === 10) {
@@ -268,7 +341,16 @@ export default function ImportOfflineBill() {
     setItems((old) => old.map((item, i) => i === index ? { ...item, [key]: value } : item))
   }
   function addItem() { setItems((old) => [...old, emptyItem()]) }
+  function duplicateItem(index) {
+    setItems((old) => [...old.slice(0, index + 1), { ...old[index] }, ...old.slice(index + 1)])
+  }
   function removeItem(index) { setItems((old) => old.length === 1 ? old : old.filter((_, i) => i !== index)) }
+
+  function clearFile() {
+    setFile(null)
+    if (preview) URL.revokeObjectURL(preview)
+    setPreview("")
+  }
 
   async function selectFile(nextFile) {
     if (!nextFile) return
@@ -282,6 +364,7 @@ export default function ImportOfflineBill() {
     if (nextFile.type.startsWith("image/")) setPreview(URL.createObjectURL(nextFile))
     else setPreview("")
   }
+
   async function scanFile() {
     if (!file) return toast.error("Select a bill image or PDF first")
 
@@ -309,20 +392,25 @@ export default function ImportOfflineBill() {
       } else {
         warnings.push("Local OCR was used. Carefully verify every extracted field before saving.")
       }
-
       if (!parsed.items.some((item) => clean(item.item_name))) {
         warnings.push("No clear line items were detected. Add the products manually.")
       }
-
       if (!parsed.customer.name) {
         warnings.push("Customer name was not detected clearly.")
       }
-
       if (!parsed.total) {
         warnings.push("Bill total was not detected. Enter the correct grand total.")
       }
 
       setOcrWarnings(warnings)
+      setDetected({
+        customer: Boolean(parsed.customer.name),
+        mobile: Boolean(parsed.customer.mobile),
+        date: Boolean(parsed.billDate),
+        billNo: Boolean(parsed.billNumber),
+        items: parsed.items.filter((item) => clean(item.item_name)).length,
+        total: Boolean(parsed.total),
+      })
 
       setCustomer({
         name: parsed.customer.name || "",
@@ -353,6 +441,7 @@ export default function ImportOfflineBill() {
       setOcrWarnings([
         "Automatic text recognition could not complete. You can still enter the bill details manually.",
       ])
+      setDetected(null)
       toast.error("Could not scan this file", {
         description: error?.message || "Check the file and try again.",
       })
@@ -365,6 +454,8 @@ export default function ImportOfflineBill() {
   function startManualEntry() {
     setStep("review")
     setOcrText("")
+    setDetected(null)
+    setOcrWarnings([])
     if (!file) setItems([emptyItem()])
   }
 
@@ -431,7 +522,7 @@ export default function ImportOfflineBill() {
       }
 
       const billNumber = generateBillNumber()
-      const paymentStatus = totals.due <= 0 ? "paid" : totals.paid > 0 ? "partial" : "unpaid"
+      const statusValue = totals.due <= 0 ? "paid" : totals.paid > 0 ? "partial" : "unpaid"
       const roundOff = roundToTwo(totals.grandTotal - totals.calculatedTotal)
       const billPayload = {
         shop_id: currentShop.id,
@@ -453,7 +544,7 @@ export default function ImportOfflineBill() {
         amount_paid: totals.paid,
         amount_due: totals.due,
         due_date: dueDate || null,
-        payment_status: paymentStatus,
+        payment_status: statusValue,
         notes: [notes.trim(), originalBillNo ? `Original bill no: ${originalBillNo}` : "", ocrText ? "Imported from offline bill (OCR reviewed)." : "Imported from offline bill."].filter(Boolean).join("\n") || null,
         attachment_url: attachmentUrl,
       }
@@ -512,7 +603,7 @@ export default function ImportOfflineBill() {
   if (!currentShop) {
     return (
       <div className="mx-auto max-w-3xl p-6">
-        <Card className="rounded-[20px] border border-white/80 bg-white/90 shadow-sm">
+        <Card className={cardClass}>
           <CardContent className="p-8 text-center">
             <AlertCircle className="mx-auto h-8 w-8 text-amber-500" />
             <h2 className="mt-3 font-bold text-slate-900 dark:text-white">Select a shop</h2>
@@ -527,11 +618,24 @@ export default function ImportOfflineBill() {
   const settledPercent = totals.grandTotal > 0
     ? Math.min(100, Math.round((totals.paid / totals.grandTotal) * 100))
     : 0
-  const paymentStatus = totals.due <= 0
-    ? "paid"
-    : totals.paid > 0
-      ? "partial"
-      : "unpaid"
+  const paymentStatus = totals.due <= 0 ? "paid" : totals.paid > 0 ? "partial" : "unpaid"
+  const roundOffValue = roundToTwo(totals.grandTotal - totals.calculatedTotal)
+  const halfGst = roundToTwo(totals.gst / 2)
+  const paidValid = money(amountPaid) <= totals.grandTotal
+
+  const checklist = [
+    { ok: Boolean(customerId || createCustomer || potentialMatch), label: "Customer selected or new customer enabled" },
+    { ok: Boolean(namedItemCount || manualTotal.trim()), label: "Items or manual total entered" },
+    { ok: Boolean(billDate) && billDate <= todayString(), label: "Bill date verified" },
+    { ok: paidValid, label: "Paid amount within bill total" },
+  ]
+  const readyCount = checklist.filter((c) => c.ok).length
+
+  const steps = [
+    { number: "01", title: "Upload bill", description: "Capture or choose a file", state: step === "upload" ? "current" : "done" },
+    { number: "02", title: "Review details", description: "Verify extracted values", state: step === "review" ? (saving ? "done" : "current") : "pending" },
+    { number: "03", title: "Import to ledger", description: "Match customer and save", state: saving ? "current" : "pending" },
+  ]
 
   return (
     <div className="min-h-full w-full space-y-5 rounded-2xl bg-[#f7f5ff] px-3 py-5 sm:px-5 lg:px-6">
@@ -541,15 +645,11 @@ export default function ImportOfflineBill() {
           <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-500">
             <span>{currentShop.name || "Workspace"}</span>
             <ChevronRight className="h-3 w-3" />
-            <button type="button" onClick={() => navigate("/bills")} className="transition-colors hover:text-slate-800">
-              Bills
-            </button>
+            <button type="button" onClick={() => navigate("/bills")} className="transition-colors hover:text-slate-800">Bills</button>
             <ChevronRight className="h-3 w-3" />
-            <span>Import offline bill</span>
+            <span className="text-slate-700">Import offline bill</span>
           </nav>
-          <h1 className="mt-1 text-[27px] font-bold tracking-tight text-[#171a36] sm:text-[32px]">
-            Import offline bill
-          </h1>
+          <h1 className="mt-1 text-[27px] font-bold tracking-tight text-[#171a36] sm:text-[32px]">Import offline bill</h1>
           <p className="mt-0.5 max-w-2xl text-sm text-slate-600">
             Scan a paper bill, review the extracted information and add it to the customer ledger.
           </p>
@@ -560,192 +660,229 @@ export default function ImportOfflineBill() {
             <span className="h-2 w-2 rounded-full bg-emerald-500" />
             {currentShop.name || "Active shop"}
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => navigate(-1)}
-            className="h-11 gap-2 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </Button>
+          <Btn onClick={() => navigate(-1)}><ArrowLeft className="h-4 w-4" /> Back</Btn>
         </div>
       </header>
 
       {/* WORKFLOW STEPS */}
-      <div className="grid gap-3 sm:grid-cols-3">
-        {[
-          ["01", "Upload bill", "Capture or choose a file"],
-          ["02", "Review details", "Verify extracted values"],
-          ["03", "Import to ledger", "Match customer and save"],
-        ].map(([number, title, description], index) => {
-          const active = (step === "upload" && index === 0) || (step === "review" && index === 1)
-          const complete = step === "review" && index === 0
-          return (
-            <div
-              key={number}
-              className={`flex items-center gap-3 rounded-[18px] border p-3.5 shadow-sm ${
-                active
-                  ? "border-emerald-200 bg-emerald-50/80"
-                  : complete
-                    ? "border-emerald-100 bg-white/90"
-                    : "border-white/80 bg-white/70"
-              }`}
-            >
-              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-bold ${
-                active || complete ? "bg-emerald-700 text-white" : "bg-violet-100 text-violet-700"
-              }`}>
-                {complete ? <Check className="h-4 w-4" /> : number}
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-[#171a36]">{title}</p>
-                <p className="mt-0.5 text-xs text-slate-500">{description}</p>
-              </div>
+      <ol className="grid gap-3 sm:grid-cols-3">
+        {steps.map((s) => (
+          <li
+            key={s.number}
+            aria-current={s.state === "current" ? "step" : undefined}
+            className={`flex items-center gap-3 rounded-[18px] border p-3.5 shadow-sm ${
+              s.state === "current" ? "border-emerald-200 bg-emerald-50/80"
+                : s.state === "done" ? "border-emerald-100 bg-white/90"
+                : "border-white/80 bg-white/70"
+            }`}
+          >
+            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-bold ${
+              s.state === "pending" ? "bg-violet-100 text-violet-700" : "bg-emerald-700 text-white"
+            }`}>
+              {s.state === "done" ? <Check className="h-4 w-4" /> : s.number}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-[#171a36]">{s.title}</p>
+              <p className="mt-0.5 text-xs text-slate-500">{s.description}</p>
             </div>
-          )
-        })}
-      </div>
+            <span className={`hidden rounded-full px-2 py-0.5 text-[10px] font-bold sm:inline ${
+              s.state === "current" ? "bg-emerald-100 text-emerald-700"
+                : s.state === "done" ? "bg-emerald-50 text-emerald-700"
+                : "bg-slate-100 text-slate-500"
+            }`}>
+              {s.state === "current" ? "In progress" : s.state === "done" ? "Done" : "Pending"}
+            </span>
+          </li>
+        ))}
+      </ol>
+
+      {/* hidden file inputs */}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,application/pdf"
+        className="hidden"
+        onChange={(event) => { selectFile(event.target.files?.[0]); event.target.value = "" }}
+      />
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(event) => { selectFile(event.target.files?.[0]); event.target.value = "" }}
+      />
 
       {step === "upload" ? (
-        <Card className="overflow-hidden rounded-[20px] border border-white/80 bg-white/90 shadow-[0_5px_18px_rgba(80,65,130,0.07)]">
-          <SectionTitle
-            icon={ScanLine}
-            title="Offline bill attachment"
-            subtitle="Upload a photo or PDF. Text recognition runs locally in your browser."
-          />
-          <CardContent className="space-y-5 p-4 sm:p-5">
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,application/pdf"
-              className="hidden"
-              onChange={(event) => {
-                selectFile(event.target.files?.[0])
-                event.target.value = ""
-              }}
+        <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+          {/* UPLOAD CARD */}
+          <Card className={cardClass}>
+            <SectionTitle
+              icon={ScanLine}
+              title="Offline bill attachment"
+              subtitle="Upload a photo or PDF. Text recognition runs locally in your browser."
             />
-            <input
-              ref={cameraRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={(event) => {
-                selectFile(event.target.files?.[0])
-                event.target.value = ""
-              }}
-            />
-
-            {!file ? (
-              <div className="grid gap-4 lg:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => cameraRef.current?.click()}
-                  className="group flex min-h-[230px] flex-col items-center justify-center rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-6 text-center transition hover:border-emerald-400 hover:shadow-md"
-                >
-                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-700 text-white shadow-lg">
-                    <Camera className="h-7 w-7" />
-                  </span>
-                  <span className="mt-4 text-base font-bold text-[#171a36]">Scan with camera</span>
-                  <span className="mt-1 max-w-xs text-sm leading-5 text-slate-500">
-                    Capture a clear photo of the physical bill.
-                  </span>
-                  <span className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-semibold text-white">
-                    <Camera className="h-4 w-4" />
-                    Open camera
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => fileRef.current?.click()}
-                  className="flex min-h-[230px] flex-col items-center justify-center rounded-2xl border border-violet-200 bg-[#faf9ff] p-6 text-center transition hover:border-violet-300 hover:bg-violet-50/60 hover:shadow-md"
-                >
-                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
-                    <UploadCloud className="h-7 w-7" />
-                  </span>
-                  <span className="mt-4 text-base font-bold text-[#171a36]">Upload from device</span>
-                  <span className="mt-1 text-sm text-slate-500">JPG, PNG, WebP or PDF · Max 5 MB</span>
-                  <span className="mt-4 inline-flex h-10 items-center rounded-xl border border-violet-200 bg-white px-4 text-sm font-semibold text-slate-700">
-                    Browse files
-                  </span>
-                </button>
-              </div>
-            ) : (
-              <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
-                <div className="flex min-h-[250px] items-center justify-center overflow-hidden rounded-2xl border border-violet-100 bg-[#faf9ff] p-3">
-                  {preview ? (
-                    <img src={preview} alt="Offline bill preview" className="max-h-[440px] max-w-full rounded-lg object-contain" />
-                  ) : (
-                    <div className="text-center">
-                      <FileText className="mx-auto h-12 w-12 text-violet-500" />
-                      <p className="mt-3 text-sm font-semibold text-slate-700">{file.name}</p>
-                      <p className="text-xs text-slate-500">PDF document</p>
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-col justify-center">
-                  <p className="break-all text-sm font-bold text-slate-800">{file.name}</p>
-                  <p className="mt-1 text-xs text-slate-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                  <Button type="button" variant="outline" onClick={() => fileRef.current?.click()} className="h-11 gap-2 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50 mt-4">
-                    <UploadCloud className="mr-2 h-4 w-4" />
-                    Replace file
-                  </Button>
-                  <Button
+            <CardContent className="space-y-5 p-4 sm:p-5">
+              {!file ? (
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <button
                     type="button"
-                    variant="ghost"
-                    onClick={() => {
-                      setFile(null)
-                      if (preview) URL.revokeObjectURL(preview)
-                      setPreview("")
-                    }}
-                    className="h-11 gap-2 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50 mt-8"
+                    onClick={() => cameraRef.current?.click()}
+                    className="group flex min-h-[230px] flex-col items-center justify-center rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-6 text-center transition hover:border-emerald-400 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
                   >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Remove file
-                  </Button>
+                    <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-700 text-white shadow-lg"><Camera className="h-7 w-7" /></span>
+                    <span className="mt-4 text-base font-bold text-[#171a36]">Scan with camera</span>
+                    <span className="mt-1 max-w-xs text-sm leading-5 text-slate-500">Capture a clear photo of the physical bill.</span>
+                    <span className={`${BTN_BASE} ${BTN_VARIANTS.primary} ${BTN_SIZES.md} mt-4`}><Camera className="h-4 w-4" /> Open camera</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    className="flex min-h-[230px] flex-col items-center justify-center rounded-2xl border border-violet-200 bg-[#faf9ff] p-6 text-center transition hover:border-violet-300 hover:bg-violet-50/60 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
+                  >
+                    <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-100 text-violet-700"><UploadCloud className="h-7 w-7" /></span>
+                    <span className="mt-4 text-base font-bold text-[#171a36]">Upload from device</span>
+                    <span className="mt-1 text-sm text-slate-500">JPG, PNG, WebP or PDF · Max 5 MB</span>
+                    <span className={`${BTN_BASE} ${BTN_VARIANTS.secondary} ${BTN_SIZES.md} mt-4`}><UploadCloud className="h-4 w-4" /> Browse files</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_260px]">
+                  <div className="flex min-h-[250px] items-center justify-center overflow-hidden rounded-2xl border border-violet-100 bg-[#faf9ff] p-3">
+                    {preview ? (
+                      <img src={preview} alt="Offline bill preview" className="max-h-[440px] max-w-full rounded-lg object-contain" />
+                    ) : (
+                      <div className="text-center">
+                        <FileText className="mx-auto h-12 w-12 text-violet-500" />
+                        <p className="mt-3 text-sm font-semibold text-slate-700">{file.name}</p>
+                        <p className="text-xs text-slate-500">PDF document</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col justify-center gap-4">
+                    <div>
+                      <p className="break-all text-sm font-bold text-slate-800">{file.name}</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <span className="rounded-full bg-violet-100 px-2.5 py-1 text-[11px] font-semibold text-violet-700">
+                          {file.type === "application/pdf" ? "PDF" : file.type.replace("image/", "").toUpperCase()}
+                        </span>
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                          {(file.size / 1024 / 1024).toFixed(2)} MB
+                        </span>
+                      </div>
+                    </div>
+                    <div className="grid gap-2">
+                      <Btn onClick={() => fileRef.current?.click()} disabled={scanning}><UploadCloud className="h-4 w-4" /> Replace file</Btn>
+                      <Btn variant="danger" onClick={clearFile} disabled={scanning}><Trash2 className="h-4 w-4" /> Remove file</Btn>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {scanning && (
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50/80 p-4" role="status" aria-live="polite">
+                  <div className="flex items-center justify-between text-sm font-semibold text-emerald-800">
+                    <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Reading bill locally…</span>
+                    {progress}%
+                  </div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-emerald-100">
+                    <div className="h-full rounded-full bg-emerald-600 transition-all" style={{ width: `${progress}%` }} />
+                  </div>
+                  <p className="mt-2 text-xs text-emerald-800/80">This can take a few seconds. Please keep this page open.</p>
+                </div>
+              )}
+
+              <div className="flex flex-col justify-between gap-3 border-t border-[#eeecf5] pt-4 sm:flex-row sm:items-center">
+                <p className="max-w-xl text-xs leading-5 text-slate-500">
+                  OCR suggestions are not saved automatically. You can correct customer, item and payment details before importing.
+                </p>
+                <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                  <Btn onClick={startManualEntry} disabled={scanning}>Enter manually</Btn>
+                  <Btn variant="primary" disabled={!file || scanning} onClick={scanFile}>
+                    {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />}
+                    {scanning ? "Scanning bill…" : "Scan & extract details"}
+                  </Btn>
                 </div>
               </div>
-            )}
+            </CardContent>
+          </Card>
 
-            {scanning && (
-              <div className="rounded-xl border border-emerald-100 bg-emerald-50/80 p-4">
-                <div className="flex items-center justify-between text-sm font-semibold text-emerald-800">
-                  <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Reading bill locally…</span>
-                  {progress}%
-                </div>
-                <div className="mt-3 h-2 overflow-hidden rounded-full bg-emerald-100">
-                  <div className="h-full rounded-full bg-emerald-600 transition-all" style={{ width: `${progress}%` }} />
-                </div>
-              </div>
-            )}
+          {/* GUIDANCE */}
+          <aside className="min-w-0 space-y-4">
+            <Card className={cardClass}>
+              <SectionTitle icon={Lightbulb} title="Tips for a better scan" />
+              <CardContent className="p-4 sm:p-5">
+                <ul className="space-y-3 text-sm text-slate-600">
+                  {[
+                    "Place the bill on a flat, plain surface.",
+                    "Use good light and avoid shadows or glare.",
+                    "Keep the whole bill inside the frame.",
+                    "Printed bills scan better than handwriting.",
+                  ].map((tip) => (
+                    <li key={tip} className="flex items-start gap-2.5">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                      <span>{tip}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
 
-            <div className="flex flex-col justify-between gap-3 border-t border-[#eeecf5] pt-4 sm:flex-row sm:items-center">
-              <p className="max-w-xl text-xs leading-5 text-slate-500">
-                OCR suggestions are not saved automatically. You can correct customer, item and payment details before importing.
+            <Card className={cardClass}>
+              <SectionTitle icon={Receipt} title="What we try to read" />
+              <CardContent className="p-4 sm:p-5">
+                <div className="flex flex-wrap gap-2">
+                  {["Customer name", "Mobile number", "Bill date", "Bill number", "Line items", "Bill total", "Amount paid"].map((label) => (
+                    <span key={label} className="rounded-full border border-violet-100 bg-[#faf9ff] px-2.5 py-1 text-xs font-semibold text-slate-600">{label}</span>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs leading-5 text-slate-500">Anything we cannot read clearly is left empty for you to fill in.</p>
+              </CardContent>
+            </Card>
+
+            <div className="flex items-start gap-3 rounded-[18px] border border-emerald-100 bg-emerald-50/60 p-4">
+              <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
+              <p className="text-xs leading-5 text-emerald-900">
+                <span className="font-bold">Private by design.</span> Your bill is read inside this browser. No paid AI service is used, and nothing is saved until you import.
               </p>
-              <div className="flex flex-col-reverse gap-2 sm:flex-row">
-                <Button type="button" variant="outline" onClick={startManualEntry} className="h-11 gap-2 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50">
-                  Enter manually
-                </Button>
-                <Button
-                  type="button"
-                  disabled={!file || scanning}
-                  onClick={scanFile}
-                  className="h-11 gap-2 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-violet-50"
-                >
-                  {scanning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ScanLine className="mr-2 h-4 w-4" />}
-                  {scanning ? "Scanning bill…" : "Scan & extract details"}
-                </Button>
-              </div>
             </div>
-          </CardContent>
-        </Card>
+          </aside>
+        </div>
       ) : (
         <>
           <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             {/* LEFT COLUMN */}
             <div className="min-w-0 space-y-4">
+              {/* SOURCE BILL */}
+              <Card className={cardClass}>
+                <CardContent className="flex flex-wrap items-center gap-4 p-4 sm:p-5">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-violet-100 bg-[#faf9ff]">
+                    {preview ? <img src={preview} alt="Bill thumbnail" className="h-full w-full object-cover" /> : <FileText className="h-6 w-6 text-violet-600" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold text-slate-800">{file ? file.name : "Manual entry"}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {file ? `Original bill attached · ${(file.size / 1024 / 1024).toFixed(2)} MB` : "No original bill attached"}
+                    </p>
+                  </div>
+                  <Btn size="sm" onClick={() => setStep("upload")}>
+                    <UploadCloud className="h-3.5 w-3.5" /> {file ? "Change file" : "Attach file"}
+                  </Btn>
+                </CardContent>
+                {detected && (
+                  <div className="flex flex-wrap items-center gap-2 border-t border-[#eeecf5] bg-[#faf9ff] px-4 py-3 sm:px-5">
+                    <span className="mr-1 text-xs font-semibold text-slate-500">Detected:</span>
+                    <DetectChip ok={detected.customer} label="Customer" />
+                    <DetectChip ok={detected.mobile} label="Mobile" />
+                    <DetectChip ok={detected.date} label="Bill date" />
+                    <DetectChip ok={detected.billNo} label="Bill no." />
+                    <DetectChip ok={detected.items > 0} label={detected.items > 0 ? `${detected.items} ${detected.items === 1 ? "item" : "items"}` : "Items"} />
+                    <DetectChip ok={detected.total} label="Total" />
+                  </div>
+                )}
+              </Card>
+
               {ocrWarnings.length > 0 && (
                 <div className="rounded-[18px] border border-amber-200 bg-amber-50/80 p-4">
                   <div className="flex items-start gap-3">
@@ -764,7 +901,7 @@ export default function ImportOfflineBill() {
               )}
 
               {/* CUSTOMER */}
-              <Card className="overflow-hidden rounded-[20px] border border-white/80 bg-white/90 shadow-[0_5px_18px_rgba(80,65,130,0.07)]">
+              <Card className={cardClass}>
                 <SectionTitle icon={UserRound} title="Customer" subtitle="Find an existing customer or create a new record." />
                 <CardContent className="space-y-4 p-4 sm:p-5">
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -784,6 +921,7 @@ export default function ImportOfflineBill() {
                     <Field label="Mobile number">
                       <Input
                         className={inputClass}
+                        inputMode="tel"
                         value={customer.mobile}
                         onChange={(event) => {
                           setCustomer({ ...customer, mobile: event.target.value })
@@ -803,10 +941,10 @@ export default function ImportOfflineBill() {
                       <span className="inline-flex items-center gap-1 rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
                         <CheckCircle2 className="h-3.5 w-3.5" /> Existing: {customerChoice.name}
                       </span>
+                    ) : createCustomer ? (
+                      <span className="rounded-full border border-violet-100 bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700">New customer will be created</span>
                     ) : clean(customer.name) ? (
-                      <span className="rounded-full border border-amber-100 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
-                        No exact match selected
-                      </span>
+                      <span className="rounded-full border border-amber-100 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">No exact match selected</span>
                     ) : (
                       <span className="text-xs text-slate-400">Enter a name or mobile number</span>
                     )}
@@ -846,26 +984,13 @@ export default function ImportOfflineBill() {
                   )}
 
                   <div className="flex flex-wrap gap-2 border-t border-[#eeecf5] pt-3">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        setCustomerId("")
-                        setCreateCustomer(true)
-                      }}
-                      className={`h-10 rounded-xl px-4 ${
-                        createCustomer
-                          ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                          : "border-violet-200 bg-white text-slate-700"
-                      }`}
+                    <Btn
+                      onClick={() => { setCustomerId(""); setCreateCustomer(true) }}
+                      className={createCustomer ? "!border-emerald-300 !bg-emerald-50 !text-emerald-800" : ""}
                     >
-                      <Plus className="mr-2 h-4 w-4" /> Create new customer
-                    </Button>
-                    {customerId && (
-                      <Button type="button" variant="ghost" onClick={() => setCustomerId("")} className="h-10 rounded-xl text-slate-500">
-                        Clear selection
-                      </Button>
-                    )}
+                      <Plus className="h-4 w-4" /> Create new customer
+                    </Btn>
+                    {customerId && <Btn variant="ghost" onClick={() => setCustomerId("")}>Clear selection</Btn>}
                   </div>
 
                   {createCustomer && (
@@ -885,17 +1010,8 @@ export default function ImportOfflineBill() {
               </Card>
 
               {/* BILL DETAILS */}
-              <Card className="overflow-hidden rounded-[20px] border border-white/80 bg-white/90 shadow-[0_5px_18px_rgba(80,65,130,0.07)]">
-                <SectionTitle
-                  icon={CalendarDays}
-                  title="Bill details"
-                  subtitle="Review the original bill information."
-                  action={
-                    <Button type="button" variant="outline" onClick={() => setStep("upload")} className="h-9 rounded-lg border-violet-200 bg-white px-3 text-xs">
-                      Change file
-                    </Button>
-                  }
-                />
+              <Card className={cardClass}>
+                <SectionTitle icon={CalendarDays} title="Bill details" subtitle="Review the original bill information." />
                 <CardContent className="space-y-4 p-4 sm:p-5">
                   <div className="grid gap-3 sm:grid-cols-3">
                     <Field label="Bill date *">
@@ -915,16 +1031,12 @@ export default function ImportOfflineBill() {
               </Card>
 
               {/* BILL ITEMS */}
-              <Card className="overflow-hidden rounded-[20px] border border-white/80 bg-white/90 shadow-[0_5px_18px_rgba(80,65,130,0.07)]">
+              <Card className={cardClass}>
                 <SectionTitle
                   icon={FileText}
                   title="Bill items"
                   subtitle={`${namedItemCount} ${namedItemCount === 1 ? "item" : "items"} added`}
-                  action={
-                    <Button type="button" variant="outline" onClick={addItem} className="h-10 shrink-0 rounded-xl border-violet-200 bg-white px-3 text-xs font-semibold text-slate-700">
-                      <Plus className="mr-1.5 h-4 w-4" /> Add item
-                    </Button>
-                  }
+                  action={<Btn size="sm" onClick={addItem}><Plus className="h-4 w-4" /> Add item</Btn>}
                 />
                 <CardContent className="space-y-3 p-4 sm:p-5">
                   {items.map((item, index) => {
@@ -936,11 +1048,16 @@ export default function ImportOfflineBill() {
                             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-bold text-violet-700">{index + 1}</span>
                             <p className="truncate text-[13px] font-bold text-slate-800">{clean(item.item_name) || `Item ${index + 1}`}</p>
                           </div>
-                          {items.length > 1 && (
-                            <button type="button" onClick={() => removeItem(index)} aria-label={`Remove item ${index + 1}`} className="rounded-lg p-1.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600">
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          )}
+                          <div className="flex items-center gap-1">
+                            <Btn variant="ghost" size="icon" onClick={() => duplicateItem(index)} aria-label={`Duplicate item ${index + 1}`} title="Duplicate item">
+                              <Copy className="h-4 w-4" />
+                            </Btn>
+                            {items.length > 1 && (
+                              <Btn variant="ghost" size="icon" onClick={() => removeItem(index)} aria-label={`Remove item ${index + 1}`} title="Remove item" className="hover:!bg-rose-50 hover:!text-rose-600">
+                                <Trash2 className="h-4 w-4" />
+                              </Btn>
+                            )}
+                          </div>
                         </div>
 
                         <div className="space-y-3 p-4">
@@ -982,6 +1099,9 @@ export default function ImportOfflineBill() {
                       </div>
                     )
                   })}
+
+                  <Btn onClick={addItem} className="w-full border-dashed"><Plus className="h-4 w-4" /> Add another item</Btn>
+
                   <div className="flex items-center justify-between border-t border-[#eeecf5] pt-3">
                     <span className="text-xs font-medium text-slate-600">{namedItemCount} {namedItemCount === 1 ? "item" : "items"}</span>
                     <div className="text-right">
@@ -992,9 +1112,9 @@ export default function ImportOfflineBill() {
                 </CardContent>
               </Card>
 
-              {/* TAX AND ORIGINAL ATTACHMENT */}
-              <Card className="overflow-hidden rounded-[20px] border border-white/80 bg-white/90 shadow-[0_5px_18px_rgba(80,65,130,0.07)]">
-                <SectionTitle icon={Receipt} title="Tax & attachment" subtitle="Choose the tax treatment and retain the original bill." />
+              {/* TAX AND TOTAL */}
+              <Card className={cardClass}>
+                <SectionTitle icon={Receipt} title="Tax & total" subtitle="Choose the tax treatment and confirm the bill total." />
                 <CardContent className="space-y-4 p-4 sm:p-5">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 ${interstate ? "border-emerald-200 bg-emerald-50/60" : "border-violet-100 bg-white"}`}>
@@ -1006,27 +1126,26 @@ export default function ImportOfflineBill() {
                       <span><span className="block text-sm font-semibold text-slate-800">Rates include GST</span><span className="mt-0.5 block text-xs text-slate-500">Entered item rates already include GST.</span></span>
                     </label>
                   </div>
+
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label="Manual bill total (optional)" >
+                    <Field
+                      label="Manual bill total (optional)"
+                      hint="Fill this if the printed bill total differs from the calculated total (for example after round-off)."
+                    >
                       <Input type="number" min="0" step="0.01" className={inputClass} value={manualTotal} onChange={(event) => setManualTotal(event.target.value)} placeholder={`Calculated: ${formatCurrency(totals.calculatedTotal)}`} />
                     </Field>
-                    <div className="flex flex-col justify-end">
-                      {file ? (
-                        <div className="flex min-w-0 items-center gap-3 rounded-xl border border-violet-100 bg-[#faf9ff] p-3">
-                          {preview ? <img src={preview} alt="Bill attachment thumbnail" className="h-10 w-10 rounded-lg object-cover" /> : <FileText className="h-8 w-8 shrink-0 text-violet-600" />}
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-xs font-semibold text-slate-800">{file.name}</p>
-                            <p className="text-[11px] text-slate-500">Original bill attached</p>
-                          </div>
-                          <Button type="button" size="icon" variant="ghost" onClick={() => setStep("upload")} className="h-9 w-9 shrink-0 text-slate-500"><UploadCloud className="h-4 w-4" /></Button>
+                    <div className="rounded-xl border border-violet-100 bg-[#faf9ff] p-3.5 text-sm">
+                      <div className="flex items-center justify-between"><span className="text-slate-600">Calculated total</span><span className="font-semibold tabular-nums text-slate-800">{formatCurrency(totals.calculatedTotal)}</span></div>
+                      <div className="mt-2 flex items-center justify-between"><span className="text-slate-600">Total used</span><span className="font-bold tabular-nums text-slate-900">{formatCurrency(totals.grandTotal)}</span></div>
+                      {manualTotal.trim() && (
+                        <div className="mt-2 flex items-center justify-between border-t border-[#eeecf5] pt-2 text-xs">
+                          <span className="text-slate-500">Difference</span>
+                          <span className={`font-semibold tabular-nums ${roundOffValue === 0 ? "text-slate-600" : "text-amber-700"}`}>{roundOffValue > 0 ? "+" : ""}{formatCurrency(roundOffValue)}</span>
                         </div>
-                      ) : (
-                        <Button type="button" variant="outline" onClick={() => setStep("upload")} className="h-11 rounded-xl border-violet-200 bg-white">
-                          <UploadCloud className="mr-2 h-4 w-4" /> Attach original bill
-                        </Button>
                       )}
                     </div>
                   </div>
+
                   {ocrText && (
                     <details className="rounded-xl border border-violet-100 bg-[#faf9ff] p-3">
                       <summary className="cursor-pointer text-xs font-semibold text-slate-600">View raw OCR text</summary>
@@ -1039,12 +1158,22 @@ export default function ImportOfflineBill() {
 
             {/* RIGHT COLUMN */}
             <aside className="min-w-0 space-y-4 xl:sticky xl:top-4">
-              <Card className="overflow-hidden rounded-[20px] border border-white/80 bg-white/90 shadow-[0_5px_18px_rgba(80,65,130,0.07)]">
+              <Card className={cardClass}>
                 <SectionTitle icon={IndianRupee} title="Bill summary" subtitle="Live totals as you review." />
                 <CardContent className="space-y-3 p-5">
-                  <div className="flex items-center justify-between text-sm"><span className="text-slate-600">Subtotal</span><span className="font-semibold tabular-nums text-slate-800">{formatCurrency(totals.subtotal)}</span></div>
-                  <div className="flex items-center justify-between text-sm"><span className="text-slate-600">Taxable amount</span><span className="font-semibold tabular-nums text-slate-800">{formatCurrency(totals.taxable)}</span></div>
-                  <div className="flex items-center justify-between text-sm"><span className="text-slate-600">Total GST</span><span className="font-semibold tabular-nums text-slate-800">{formatCurrency(totals.gst)}</span></div>
+                  <Row label="Items" value={namedItemCount} />
+                  <Row label="Subtotal" value={formatCurrency(totals.subtotal)} />
+                  <Row label="Taxable amount" value={formatCurrency(totals.taxable)} />
+                  {interstate ? (
+                    <Row label="IGST" value={formatCurrency(totals.gst)} />
+                  ) : (
+                    <>
+                      <Row label="CGST" value={formatCurrency(halfGst)} />
+                      <Row label="SGST" value={formatCurrency(roundToTwo(totals.gst - halfGst))} />
+                    </>
+                  )}
+                  <Row label="Total GST" value={formatCurrency(totals.gst)} />
+                  {Math.abs(roundOffValue) >= 0.01 && <Row label="Round off / adjustment" value={`${roundOffValue > 0 ? "+" : ""}${formatCurrency(roundOffValue)}`} tone="text-amber-700" />}
                   <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-sm font-semibold text-emerald-800">Grand total</span>
@@ -1054,26 +1183,23 @@ export default function ImportOfflineBill() {
                 </CardContent>
               </Card>
 
-              <Card className="overflow-hidden rounded-[20px] border border-white/80 bg-white/90 shadow-[0_5px_18px_rgba(80,65,130,0.07)]">
+              <Card className={cardClass}>
                 <SectionTitle
                   icon={CreditCard}
                   title="Payment details"
                   subtitle="Record the amount received."
-                  action={
-                    <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${
-                      paymentStatus === "paid" ? "border-emerald-200 bg-emerald-50 text-emerald-700" :
-                      paymentStatus === "partial" ? "border-amber-200 bg-amber-50 text-amber-700" :
-                      "border-rose-200 bg-rose-50 text-rose-700"
-                    }`}>{paymentStatus === "paid" ? "Paid" : paymentStatus === "partial" ? "Partial" : "Unpaid"}</span>
-                  }
+                  action={<StatusPill status={paymentStatus} />}
                 />
                 <CardContent className="space-y-4 p-5">
                   <Field label="Amount paid now (₹)">
-                    <div className="flex gap-2">
-                      <Input type="number" min="0" step="0.01" className={inputClass} value={amountPaid} onChange={(event) => setAmountPaid(event.target.value)} />
-                      <Button type="button" variant="outline" onClick={() => setAmountPaid(String(totals.grandTotal))} className="h-11 shrink-0 rounded-xl border-violet-200 bg-white px-3">Full</Button>
-                    </div>
+                    <Input type="number" min="0" step="0.01" className={inputClass} value={amountPaid} onChange={(event) => setAmountPaid(event.target.value)} />
                   </Field>
+                  <div className="grid grid-cols-3 gap-2">
+                    <Btn size="sm" onClick={() => setAmountPaid(String(totals.grandTotal))}>Full</Btn>
+                    <Btn size="sm" onClick={() => setAmountPaid(String(roundToTwo(totals.grandTotal / 2)))}>Half</Btn>
+                    <Btn size="sm" onClick={() => setAmountPaid("0")}>Clear</Btn>
+                  </div>
+                  {!paidValid && <p className="text-xs font-medium text-rose-600">Paid amount cannot exceed the bill total.</p>}
                   <Field label="Payment mode">
                     <select className={`${inputClass} w-full px-3`} value={paymentMode} onChange={(event) => setPaymentMode(event.target.value)}>
                       {PAYMENT_MODES.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
@@ -1084,12 +1210,12 @@ export default function ImportOfflineBill() {
                       <span className="font-medium text-slate-600">Settled</span>
                       <span className="font-bold tabular-nums text-slate-800">{settledPercent}%</span>
                     </div>
-                    <div className="h-2.5 overflow-hidden rounded-full bg-rose-100">
+                    <div className="h-2.5 overflow-hidden rounded-full bg-rose-100" role="progressbar" aria-valuenow={settledPercent} aria-valuemin={0} aria-valuemax={100}>
                       <div className="h-full rounded-full bg-emerald-600 transition-all" style={{ width: `${settledPercent}%` }} />
                     </div>
                   </div>
                   <div className="space-y-2 border-t border-[#eeecf5] pt-3">
-                    <div className="flex items-center justify-between text-sm"><span className="text-slate-600">Paid</span><span className="font-semibold tabular-nums text-slate-800">{formatCurrency(totals.paid)}</span></div>
+                    <Row label="Paid" value={formatCurrency(totals.paid)} />
                     <div className="flex items-center justify-between rounded-xl border border-rose-100 bg-rose-50/70 px-3.5 py-2.5">
                       <span className="text-sm font-semibold text-rose-700">Remaining due</span>
                       <span className="text-base font-bold tabular-nums text-rose-700">{formatCurrency(totals.due)}</span>
@@ -1098,24 +1224,30 @@ export default function ImportOfflineBill() {
                 </CardContent>
               </Card>
 
-              <Card className="overflow-hidden rounded-[20px] border border-white/80 bg-white/90 shadow-[0_5px_18px_rgba(80,65,130,0.07)]">
-                <CardContent className="space-y-3 p-5">
-                  <ul className="space-y-2.5">
-                    <li className="flex items-center gap-2 text-xs"><CheckCircle2 className={`h-4 w-4 ${customerId || createCustomer ? "text-emerald-600" : "text-slate-300"}`} />Customer selected or new customer enabled</li>
-                    <li className="flex items-center gap-2 text-xs"><CheckCircle2 className={`h-4 w-4 ${namedItemCount || manualTotal ? "text-emerald-600" : "text-slate-300"}`} />Items or manual total entered</li>
-                    <li className="flex items-center gap-2 text-xs"><CheckCircle2 className={`h-4 w-4 ${Boolean(billDate) ? "text-emerald-600" : "text-slate-300"}`} />Bill date verified</li>
-                  </ul>
-                  <Button
-                    type="button"
-                    disabled={saving || customerLoading}
-                    onClick={saveBill}
-                    className="h-11 w-full rounded-xl bg-emerald-700 font-semibold text-white shadow-sm hover:bg-emerald-800"
-                  >
-                    {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Importing bill…</> : <><CheckCircle2 className="mr-2 h-4 w-4" /> Import bill to customer</>}
-                  </Button>
-                  <Button type="button" variant="outline" disabled={saving} onClick={() => setStep("upload")} className="h-11 w-full rounded-xl border-violet-200 bg-white">
-                    Back to upload
-                  </Button>
+              <Card className={cardClass}>
+                <CardContent className="space-y-4 p-5">
+                  <div>
+                    <div className="mb-2 flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-700">Ready to import</span>
+                      <span className="font-bold tabular-nums text-slate-800">{readyCount}/{checklist.length}</span>
+                    </div>
+                    <ul className="space-y-2.5">
+                      {checklist.map((c) => (
+                        <li key={c.label} className="flex items-center gap-2 text-xs text-slate-600">
+                          <CheckCircle2 className={`h-4 w-4 shrink-0 ${c.ok ? "text-emerald-600" : "text-slate-300"}`} />
+                          {c.label}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="grid gap-2">
+                    <Btn variant="primary" className="w-full" disabled={saving || customerLoading} onClick={saveBill}>
+                      {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> Importing bill…</> : <><CheckCircle2 className="h-4 w-4" /> Import bill to customer</>}
+                    </Btn>
+                    <Btn className="w-full" disabled={saving} onClick={() => setStep("upload")}>
+                      <ArrowLeft className="h-4 w-4" /> Back to upload
+                    </Btn>
+                  </div>
                   <p className="text-center text-[11px] leading-4 text-slate-500">
                     Review customer, item and payment details before importing.
                   </p>
@@ -1130,13 +1262,12 @@ export default function ImportOfflineBill() {
               <p className="text-[11px] font-medium text-slate-500">Grand total</p>
               <p className="truncate text-lg font-bold tabular-nums text-slate-900">{formatCurrency(totals.grandTotal)}</p>
             </div>
-            <Button type="button" disabled={saving || customerLoading} onClick={saveBill} className="h-11 shrink-0 rounded-xl bg-emerald-700 px-4 font-semibold text-white hover:bg-emerald-800">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <><CheckCircle2 className="mr-2 h-4 w-4" /> Import bill</>}
-            </Button>
+            <Btn variant="primary" disabled={saving || customerLoading} onClick={saveBill}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <><CheckCircle2 className="h-4 w-4" /> Import bill</>}
+            </Btn>
           </div>
         </>
       )}
     </div>
   )
-
 }
