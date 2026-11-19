@@ -1,8 +1,11 @@
+
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+
 import { ThemeProvider } from "@/contexts/ThemeContext"
 import { AuthProvider, useAuth } from "@/contexts/AuthContext"
 import { ShopProvider } from "@/contexts/ShopContext"
+
 import { AppLayout } from "@/components/layout/AppLayout"
 import { AppToaster } from "@/components/ui/toaster"
 
@@ -24,6 +27,9 @@ import KhataDetail from "@/pages/KhataDetail"
 import TownCollections from "@/pages/TownCollections"
 import ImportOfflineBill from "@/pages/ImportOfflineBill"
 import Reminder from "@/pages/Reminder"
+import Trash from "@/pages/Trash"
+import Landing from "@/pages/Landing"
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -72,29 +78,35 @@ export default function App() {
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/command-center" element={<CommandCenter />} />
                   <Route path="/customers" element={<Customers />} />
+
                   <Route path="/bills" element={<Bills />} />
                   <Route path="/bills/new" element={<CreateBill />} />
                   <Route path="/bills/:id" element={<BillDetail />} />
+                  <Route path="/bills/import" element={<ImportOfflineBill />} />
+
                   <Route path="/khata" element={<Khata />} />
-                  <Route path="/reminders" element={<Reminder />} />
                   <Route path="/khata/:customerKey" element={<KhataDetail />} />
+
+                  <Route path="/reminders" element={<Reminder />} />
+                  <Route path="/trash" element={<Trash />} />
+
                   <Route path="/dues" element={<Dues />} />
                   <Route path="/customers/:customerId" element={<CustomerDetails />} />
                   <Route path="/payments" element={<Payments />} />
+                  <Route path="/welcome" element={<Landing />} />
+
                   <Route path="/settings" element={<Settings />} />
-                  <Route path="/bills/import" element={<ImportOfflineBill />} />
                   <Route path="/profile" element={<Profile />} />
                   <Route
-                          path="/town-collections"
-                          element={<TownCollections />}
-                        />
+                    path="/town-collections"
+                    element={<TownCollections />}
+                  />
                 </Route>
 
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </BrowserRouter>
 
-            {/* One global toaster for the entire application */}
             <AppToaster />
           </ShopProvider>
         </AuthProvider>

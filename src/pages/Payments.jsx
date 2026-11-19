@@ -4,6 +4,7 @@ import { useShop } from "@/contexts/ShopContext"
 import { supabase } from "@/lib/supabase"
 import { formatCurrency, formatDate, PAYMENT_MODES } from "@/lib/utils"
 import { downloadPaymentsPDF } from "@/lib/paymentsPdf"
+import { moveToTrash } from "@/lib/trash"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -1141,7 +1142,7 @@ export default function Payments() {
   }
 
   /* --------------------------------------------------
-     DELETE PAYMENT AND RESTORE BILL BALANCES
+     MOVE PAYMENT TO TRASH
   -------------------------------------------------- */
 
   async function handleDeletePayment() {
@@ -1151,48 +1152,16 @@ export default function Payments() {
     setDeletingPaymentId(payment.id)
 
     try {
-      if (payment.is_refund) {
-        throw new Error(
-          "Refund deletion is not supported by this payment reversal function."
-        )
-      }
-
-      // Prevent deleting an advance that has already been adjusted in bills.
-      const { data: advances, error: advanceCheckError } = await supabase
-        .from("customer_advances")
-        .select("amount, remaining_amount")
-        .eq("payment_id", payment.id)
-        .eq("shop_id", shopId)
-
-      if (advanceCheckError) throw advanceCheckError
-
-      const consumedAdvance = (advances || []).some(
-        (item) =>
-          num(item.remaining_amount) + 0.009 < num(item.amount)
-      )
-
-      if (consumedAdvance) {
-        throw new Error(
-          "This payment includes an advance already adjusted in a bill. It cannot be deleted safely until that adjustment is reversed."
-        )
-      }
-
-      const { data, error } = await supabase.rpc(
-        "delete_payment_and_restore_balances",
-        { p_payment_id: payment.id }
-      )
-
-      if (error) throw error
-      if (data === false) throw new Error("Payment could not be deleted.")
+      await moveToTrash({ shopId, type: "payment", id: payment.id })
 
       setPaymentToDelete(null)
-      toast.success("Payment deleted and bill balances restored", {
-        description: `${formatCurrency(payment.amount)} payment record has been deleted.`,
+      toast.success("Payment moved to Trash", {
+        description: "You can restore it or permanently delete it from the Trash page.",
       })
       await loadPayments(true)
     } catch (error) {
-      console.error("Delete payment error:", error)
-      toast.error("Could not delete payment", {
+      console.error("Move payment to Trash error:", error)
+      toast.error("Could not move payment to Trash", {
         description: error?.message || "Please try again.",
       })
     } finally {
@@ -1808,10 +1777,10 @@ export default function Payments() {
                                   type="button"
                                   variant="outline"
                                   size="icon"
-                                  aria-label={`Delete payment of ${formatCurrency(payment.amount)} for ${name}`}
-                                  title="Delete payment"
+                                  aria-label={`Move payment of ${formatCurrency(payment.amount)} for ${name} to Trash`}
+                                  title="Move to Trash"
                                   onClick={() => setPaymentToDelete(payment)}
-                                  className="h-9 w-9 rounded-xl border-rose-200 bg-white text-rose-600 shadow-sm hover:bg-rose-50 hover:text-rose-700"
+                                  className="h-9 w-9 rounded-xl border border-rose-200 bg-rose-50/70 text-rose-600 shadow-sm transition-all hover:border-rose-300 hover:bg-rose-100 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300 dark:hover:border-rose-800 dark:hover:bg-rose-950/60"
                                 >
                                   <Trash2 className="h-4 w-4" aria-hidden="true" />
                                 </Button>
@@ -1931,10 +1900,10 @@ export default function Payments() {
                             type="button"
                             variant="outline"
                             onClick={() => setPaymentToDelete(payment)}
-                            className="h-10 gap-2 rounded-xl border-rose-200 bg-white px-3 text-sm font-medium text-rose-600 shadow-sm hover:bg-rose-50 hover:text-rose-700"
+                            className="h-10 gap-2 rounded-xl border border-rose-200 bg-rose-50/70 px-3 text-sm font-medium text-rose-600 shadow-sm transition-all hover:border-rose-300 hover:bg-rose-100 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300 dark:hover:border-rose-800 dark:hover:bg-rose-950/60"
                           >
                             <Trash2 className="h-4 w-4" aria-hidden="true" />
-                            Delete
+                            Move to Trash
                           </Button>
                         </div>
                       </div>
@@ -2234,10 +2203,10 @@ export default function Payments() {
               <Trash2 className="h-5 w-5" aria-hidden="true" />
             </div>
             <DialogTitle className="text-lg font-bold text-[#171a36]">
-              Delete this payment?
+              Move this payment to Trash?
             </DialogTitle>
             <DialogDescription className="text-sm leading-6 text-slate-500">
-              This will delete the payment, restore its bill allocations, and remove any unused linked advance. Refunds and already-adjusted advances cannot be deleted here.
+              This payment will be moved to Trash. Its bill balances and linked advance details will be preserved so the record can be restored.
             </DialogDescription>
           </DialogHeader>
 
@@ -2272,17 +2241,17 @@ export default function Payments() {
               type="button"
               onClick={handleDeletePayment}
               disabled={!paymentToDelete || !!deletingPaymentId}
-              className="h-10 min-w-[148px] gap-2 rounded-xl border border-violet-200 bg-white px-5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-violet-300 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/25 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:bg-slate-700"
+              className="h-10 min-w-[148px] gap-2 rounded-xl border border-rose-200 bg-rose-600 px-5 text-sm font-semibold text-white shadow-sm transition-all hover:border-rose-700 hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-700 dark:bg-rose-700 dark:text-white dark:hover:border-rose-600 dark:hover:bg-rose-600"
             >
               {deletingPaymentId ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Deleting...
+                  Moving...
                 </>
               ) : (
                 <>
                   <Trash2 className="h-4 w-4" />
-                  Delete payment
+                  Move to Trash
                 </>
               )}
             </Button>

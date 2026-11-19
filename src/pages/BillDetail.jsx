@@ -913,7 +913,7 @@ function PaymentHistoryCard({ bill, payments, advanceAllocations = [], totals, i
         title: `${payment.is_refund ? "Refund" : "Payment"} · ${payment.payment_mode || "Other"}`,
         date: payment.payment_date,
         stamp: payment.created_at || "",
-        amount: num(payment.amount),
+        amount: num(payment.allocated_amount ?? payment.amount),
       })),
     ]
 
@@ -2481,7 +2481,7 @@ export default function BillDetail() {
       setLoadError("")
 
       try {
-        const [billRes, itemsRes, paymentsRes, allocationsRes] = await Promise.all([
+        const [billRes, itemsRes, directPaymentsRes, allocationsRes, groupedPaymentAllocationsRes] = await Promise.all([
           supabase
             .from("bills")
             .select("*, customers(*), shops(*)")
@@ -2495,6 +2495,7 @@ export default function BillDetail() {
             .eq("bill_id", id)
             .order("sort_order", { ascending: true }),
 
+          // Legacy / bill-specific payments are still supported.
           supabase
             .from("payments")
             .select("*")
@@ -2507,19 +2508,71 @@ export default function BillDetail() {
             .select("id, advance_id, bill_id, amount, created_at")
             .eq("bill_id", id)
             .order("created_at", { ascending: true }),
+
+          // A grouped payment can be allocated to several bills. Its payment
+          // row may not have this bill_id, so load this bill's allocation rows.
+          supabase
+            .from("payment_allocations")
+            .select("payment_id, bill_id, amount")
+            .eq("shop_id", shopId)
+            .eq("bill_id", id)
+            .order("created_at", { ascending: true }),
         ])
 
         if (billRes.error) throw billRes.error
         if (itemsRes.error) throw itemsRes.error
-        if (paymentsRes.error) throw paymentsRes.error
+        if (directPaymentsRes.error) throw directPaymentsRes.error
         if (allocationsRes.error) throw allocationsRes.error
+        if (groupedPaymentAllocationsRes.error) throw groupedPaymentAllocationsRes.error
+
+        const groupedRows = groupedPaymentAllocationsRes.data || []
+        const groupedPaymentIds = [...new Set(
+          groupedRows.map((row) => row.payment_id).filter(Boolean)
+        )]
+
+        let groupedPayments = []
+        if (groupedPaymentIds.length) {
+          const { data, error } = await supabase
+            .from("payments")
+            .select("*")
+            .eq("shop_id", shopId)
+            .in("id", groupedPaymentIds)
+
+          if (error) throw error
+          groupedPayments = data || []
+        }
+
+        // Use the allocation amount for this bill, not the full group payment.
+        // Merge with direct payments while avoiding duplicate payment entries.
+        const groupedPaymentById = new Map(
+          groupedPayments.map((payment) => [String(payment.id), payment])
+        )
+        const groupedHistory = groupedRows
+          .map((allocation) => {
+            const payment = groupedPaymentById.get(String(allocation.payment_id))
+            if (!payment) return null
+            return {
+              ...payment,
+              allocated_amount: num(allocation.amount),
+            }
+          })
+          .filter(Boolean)
+
+        const groupedIds = new Set(groupedHistory.map((payment) => String(payment.id)))
+        const directHistory = (directPaymentsRes.data || [])
+          .filter((payment) => !groupedIds.has(String(payment.id)))
+          .map((payment) => ({ ...payment, allocated_amount: num(payment.amount) }))
+
+        const paymentHistory = [...directHistory, ...groupedHistory].sort(
+          (a, b) => String(b.payment_date || "").localeCompare(String(a.payment_date || ""))
+        )
 
         // A newer request has started — ignore this result
         if (requestId !== requestRef.current) return
 
         setBill(billRes.data || null)
         setItems(itemsRes.data || [])
-        setPayments(paymentsRes.data || [])
+        setPayments(paymentHistory)
         setAdvanceAllocations(allocationsRes.data || [])
         setLastUpdated(new Date())
         hasLoaded.current = true

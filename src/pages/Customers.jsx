@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { useShop } from "@/contexts/ShopContext"
 import { supabase } from "@/lib/supabase"
+import { moveToTrash } from "@/lib/trash"
 import { formatCurrency, formatDate, CUSTOMER_TYPES } from "@/lib/utils"
 import { generateCustomersPDF, generateCustomerPDF } from "@/lib/customersPdf"
 
@@ -167,7 +168,10 @@ const cardClass =
 
 // Shared look for every non-destructive action button — matches the Export button.
 const outlineBtn =
-  "rounded-xl border-violet-200 bg-white text-slate-700 shadow-sm hover:bg-violet-50"
+  "rounded-xl border-violet-200 bg-white text-slate-700 shadow-sm hover:bg-violet-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+
+const dangerOutlineBtn =
+  "rounded-xl border-rose-200 bg-rose-50 text-rose-700 shadow-sm hover:border-rose-300 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300 dark:hover:bg-rose-950"
 
 /* ==================================================
    HELPERS
@@ -385,41 +389,6 @@ async function uploadCustomerPhoto(shopId, file) {
     throw new Error("Photo uploaded, but its public URL could not be created. Check the avatars bucket.")
   }
   return publicData.publicUrl
-}
-
-/* ---------- permanent customer deletion ---------- */
-async function permanentlyDeleteCustomer({ customer, shopId }) {
-  const { data: billRows, error: billsReadError } = await supabase
-    .from("bills").select("id").eq("shop_id", shopId).eq("customer_id", customer.id)
-  if (billsReadError) throw billsReadError
-  const billIds = (billRows || []).map((bill) => bill.id)
-
-  const { error: paymentsError } = await supabase.from("payments").delete()
-    .eq("shop_id", shopId).eq("customer_id", customer.id)
-  if (paymentsError) throw paymentsError
-
-  if (billIds.length) {
-    const { error: itemsError } = await supabase.from("bill_items").delete().in("bill_id", billIds)
-    if (itemsError) throw itemsError
-    const { error: billsError } = await supabase.from("bills").delete()
-      .eq("shop_id", shopId).eq("customer_id", customer.id)
-    if (billsError) throw billsError
-  }
-
-  const { error: advancesError } = await supabase.from("customer_advances").delete()
-    .eq("shop_id", shopId).eq("customer_id", customer.id)
-  if (advancesError) throw advancesError
-
-  const { error: customerError } = await supabase.from("customers").delete()
-    .eq("id", customer.id).eq("shop_id", shopId)
-  if (customerError) throw customerError
-
-  try {
-    await removeCustomerPhoto(customer.photo_url)
-  } catch (photoError) {
-    console.error("Customer photo cleanup error:", photoError)
-    toast.warning("Customer deleted, but the profile photo could not be removed from storage.")
-  }
 }
 
 /* ---------- customer form ---------- */
@@ -887,7 +856,7 @@ function FilterChip({ active, onClick, children, count }) {
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-full border px-3.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${
+      className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-full border px-3.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40 ${
         active
           ? "border-violet-300 bg-violet-100 text-violet-800"
           : "border-violet-200 bg-white text-slate-700 hover:bg-violet-50"
@@ -1059,7 +1028,7 @@ function PeriodMenu({ period, onChange, range, label, today }) {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="flex h-11 w-full max-w-full items-center gap-2 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:w-auto sm:max-w-[270px]"
+        className="flex h-11 w-full max-w-full items-center gap-2 rounded-xl border border-violet-200 bg-white/90 px-4 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40 sm:w-auto sm:max-w-[270px]"
       >
         <CalendarDays className="h-4 w-4 shrink-0 text-slate-600" aria-hidden="true" />
         <span className="truncate">{label}</span>
@@ -1087,7 +1056,7 @@ function PeriodMenu({ period, onChange, range, label, today }) {
                   role="menuitemradio"
                   aria-checked={active}
                   onClick={() => choose(option.mode)}
-                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${
+                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40 ${
                     active ? "bg-emerald-50 font-semibold text-emerald-800" : "text-slate-700 hover:bg-violet-50"
                   }`}
                 >
@@ -1110,7 +1079,7 @@ function PeriodMenu({ period, onChange, range, label, today }) {
                     value={range.from || ""}
                     max={range.to || today}
                     onChange={(e) => changeCustom("from", e.target.value)}
-                    className="h-9 w-full rounded-lg border border-violet-200 bg-white px-2 text-xs text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                    className="h-9 w-full rounded-lg border border-violet-200 bg-white px-2 text-xs text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40"
                   />
                 </label>
                 <label className="block">
@@ -1121,7 +1090,7 @@ function PeriodMenu({ period, onChange, range, label, today }) {
                     min={range.from || undefined}
                     max={today}
                     onChange={(e) => changeCustom("to", e.target.value)}
-                    className="h-9 w-full rounded-lg border border-violet-200 bg-white px-2 text-xs text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                    className="h-9 w-full rounded-lg border border-violet-200 bg-white px-2 text-xs text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40"
                   />
                 </label>
               </div>
@@ -1150,7 +1119,7 @@ function PeriodMenu({ period, onChange, range, label, today }) {
 ================================================== */
 
 const CONFIRM_TONES = {
-  rose: { box: "bg-rose-100/80 text-rose-600", button: "border-rose-200 bg-white text-rose-700 hover:bg-rose-50" },
+  rose: { box: "bg-rose-100/80 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300", button: "border-rose-600 bg-rose-600 text-white hover:bg-rose-700 dark:border-rose-500 dark:bg-rose-600 dark:text-white dark:hover:bg-rose-700" },
   amber: { box: "bg-amber-100/80 text-amber-600", button: "border-amber-200 bg-white text-amber-800 hover:bg-amber-50" },
   emerald: { box: "bg-emerald-100/80 text-emerald-700", button: "border-violet-200 bg-white text-slate-700 hover:bg-violet-50" },
 }
@@ -1320,7 +1289,7 @@ function CustomerFormDialog({ ctl }) {
                     </Button>
 
                     {form.photo_preview && (
-                      <Button type="button" variant="outline" onClick={ctl.removePhoto} className="h-9 gap-2 rounded-xl border-rose-200 bg-white text-xs text-rose-700 shadow-sm hover:bg-rose-50">
+                      <Button type="button" variant="outline" onClick={ctl.removePhoto} className={`h-9 gap-2 text-xs ${dangerOutlineBtn}`}>
                         Remove
                       </Button>
                     )}
@@ -1765,22 +1734,21 @@ function CustomersList({ currentShop }) {
 
   async function handleDelete() {
     if (!deleteTarget) return
-    if (deleteName.trim().toLocaleLowerCase() !== deleteTarget.customer.name.trim().toLocaleLowerCase()) {
-      toast.error("Customer name does not match")
-      return
-    }
     setBusy(true)
     try {
-      await permanentlyDeleteCustomer({ customer: deleteTarget.customer, shopId })
-      toast.success("Customer and all linked records deleted permanently")
+      await moveToTrash({ shopId, type: "customer", id: deleteTarget.customer.id })
+      toast.success("Customer moved to Trash", {
+        description: "You can restore it or permanently delete it from the Trash page.",
+      })
       setDeleteTarget(null)
       setDeleteStage("summary")
       setDeleteName("")
       setQuickView(null)
       await loadCustomers(true)
     } catch (error) {
-      toast.error("Unable to delete customer", {
-        description: error?.message || "Please check linked records and database permissions.",
+      console.error("Move customer to Trash error:", error)
+      toast.error("Unable to move customer to Trash", {
+        description: error?.message || "Please check the Trash setup and database permissions.",
         duration: 7000,
       })
     } finally {
@@ -1845,7 +1813,7 @@ function CustomersList({ currentShop }) {
             <Archive className="h-4 w-4" />
           </Button>
         )}
-        <Button type="button" variant="outline" size="icon" onClick={() => { setDeleteName(""); setDeleteStage("summary"); setDeleteTarget(row) }} aria-label={`Delete ${customer.name} permanently`} title="Delete permanently" className="h-8 w-8 rounded-lg border-rose-200 bg-white text-rose-700 shadow-sm hover:bg-rose-50">
+        <Button type="button" variant="outline" size="icon" onClick={() => { setDeleteName(""); setDeleteStage("summary"); setDeleteTarget(row) }} aria-label={`Move ${customer.name} to Trash`} title="Move to Trash" className={`h-8 w-8 ${dangerOutlineBtn}`}>
           <Trash2 className="h-4 w-4" />
         </Button>
 
@@ -1911,7 +1879,7 @@ function CustomersList({ currentShop }) {
               <Archive className="h-4 w-4" />
             </Button>
           )}
-          <Button type="button" variant="outline" size="icon" onClick={() => { setDeleteName(""); setDeleteStage("summary"); setDeleteTarget(row) }} aria-label={`Delete ${customer.name} permanently`} title="Delete permanently" className="h-9 w-9 rounded-lg border-rose-200 bg-white text-rose-700 shadow-sm hover:bg-rose-50">
+          <Button type="button" variant="outline" size="icon" onClick={() => { setDeleteName(""); setDeleteStage("summary"); setDeleteTarget(row) }} aria-label={`Move ${customer.name} to Trash`} title="Move to Trash" className={`h-9 w-9 ${dangerOutlineBtn}`}>
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
@@ -2260,14 +2228,14 @@ function CustomersList({ currentShop }) {
         )}
       </ConfirmDialog>
 
-      {/* DELETE SUMMARY - STEP 1 */}
+      {/* TRASH REVIEW - STEP 1 */}
       <ConfirmDialog
         open={Boolean(deleteTarget) && deleteStage === "summary"}
         onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setDeleteStage("summary"); setDeleteName("") } }}
         icon={AlertTriangle}
         tone="amber"
         title={`Review ${deleteTarget?.customer.name || "customer"} account`}
-        description="Please review what will be permanently removed before continuing. This action cannot be undone."
+        description="Review this customer’s account before moving it to Trash. You can restore it later."
         confirmLabel="Continue"
         loading={busy}
         onConfirm={() => { setDeleteName(""); setDeleteStage("confirm") }}
@@ -2278,32 +2246,22 @@ function CustomersList({ currentShop }) {
           <MiniStat label="Advance held" value={formatCurrency(deleteTarget?.advance || 0)} />
           <MiniStat label="Overdue" value={formatCurrency(deleteTarget?.overdue || 0)} tone={(deleteTarget?.overdue || 0) > 0 ? "rose" : "slate"} />
         </div>
-        <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-800">Customer, bills, bill items, payments, advances and profile photo will be deleted permanently.</p>
+        <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs leading-5 text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">The customer and its linked records will be moved to Trash. Nothing is permanently deleted at this step.</p>
       </ConfirmDialog>
 
-      {/* DELETE NAME CONFIRMATION - STEP 2 */}
+      {/* TRASH CONFIRMATION - STEP 2 */}
       <ConfirmDialog
         open={Boolean(deleteTarget) && deleteStage === "confirm"}
         onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setDeleteStage("summary"); setDeleteName("") } }}
         icon={Trash2}
         tone="rose"
-        title="Confirm permanent deletion"
-        description="This action cannot be undone. Confirm by typing the customer name exactly as shown."
-        confirmLabel="Delete permanently"
-        loadingLabel="Deleting…"
+        title="Move customer to Trash?"
+        description="The customer and linked records will be moved to Trash. You can restore them later or permanently delete them from the Trash page."
+        confirmLabel="Move to Trash"
+        loadingLabel="Moving…"
         loading={busy}
-        confirmDisabled={deleteName.trim().toLocaleLowerCase() !== (deleteTarget?.customer.name || "").trim().toLocaleLowerCase()}
         onConfirm={handleDelete}
-      >
-        <div className="space-y-3 text-left">
-          <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-sm leading-6 text-rose-900">
-            To confirm, type <span className="mx-1 inline-block break-all rounded-md border border-rose-200 bg-white px-2 py-0.5 font-mono text-sm font-bold text-slate-900">{deleteTarget?.customer.name}</span> below.
-          </p>
-          <Input value={deleteName} onChange={(event) => setDeleteName(event.target.value)} placeholder="Type customer name" autoComplete="off" className="h-11 rounded-xl border-rose-200 bg-white focus-visible:ring-rose-500/20" />
-          <p className="text-[11px] text-slate-500">Delete button activates only when the name matches exactly.</p>
-          <Button type="button" variant="outline" className={`h-8 gap-2 px-2 text-xs ${outlineBtn}`} onClick={() => { setDeleteStage("summary"); setDeleteName("") }}>Back to account summary</Button>
-        </div>
-      </ConfirmDialog>
+      />
     </div>
   )
 }
@@ -2473,20 +2431,20 @@ function CustomerDetails({ currentShop, customerId }) {
 
   async function handleDeleteCustomer() {
     if (!customer) return
-    if (deleteName.trim().toLocaleLowerCase() !== customer.name.trim().toLocaleLowerCase()) {
-      toast.error("Customer name does not match")
-      return
-    }
     setDeleting(true)
     try {
-      await permanentlyDeleteCustomer({ customer, shopId })
-      toast.success("Customer and all linked records deleted permanently")
+      await moveToTrash({ shopId, type: "customer", id: customer.id })
+      toast.success("Customer moved to Trash", {
+        description: "You can restore it or permanently delete it from the Trash page.",
+      })
       setDeleteOpen(false)
       setDeleteStage("summary")
+      setDeleteName("")
       navigate("/customers", { replace: true })
     } catch (error) {
-      toast.error("Unable to delete customer", {
-        description: error?.message || "Please check linked records and database permissions.",
+      console.error("Move customer to Trash error:", error)
+      toast.error("Unable to move customer to Trash", {
+        description: error?.message || "Please check the Trash setup and database permissions.",
         duration: 7000,
       })
     } finally {
@@ -2843,7 +2801,7 @@ function CustomerDetails({ currentShop, customerId }) {
                   role="tab"
                   aria-selected={active}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex shrink-0 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${
+                  className={`flex shrink-0 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40 ${
                     active ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:bg-violet-50 hover:text-slate-900"
                   }`}
                 >
@@ -3329,9 +3287,9 @@ function CustomerDetails({ currentShop, customerId }) {
                   variant="outline"
                   onClick={() => { setDeleteName(""); setDeleteStage("summary"); setDeleteOpen(true) }}
                   disabled={deleting}
-                  className="mt-2 h-10 w-full gap-2 rounded-xl border-rose-200 bg-white text-rose-700 shadow-sm hover:bg-rose-50"
+                  className={`mt-2 h-10 w-full gap-2 ${dangerOutlineBtn}`}
                 >
-                  <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete customer
+                  <Trash2 className="h-4 w-4" aria-hidden="true" /> Move to Trash
                 </Button>
               </div>
             </CardContent>
@@ -3368,7 +3326,7 @@ function CustomerDetails({ currentShop, customerId }) {
         icon={AlertTriangle}
         tone="amber"
         title={`Review ${customer.name} account`}
-        description="Please review the records linked to this customer before continuing."
+        description="Review the records linked to this customer before moving the account to Trash."
         confirmLabel="Continue"
         onConfirm={() => { setDeleteName(""); setDeleteStage("confirm") }}
       >
@@ -3380,7 +3338,7 @@ function CustomerDetails({ currentShop, customerId }) {
           <MiniStat label="Outstanding" value={formatCurrency(calc.totalOutstanding)} tone={calc.totalOutstanding > 0 ? "rose" : "emerald"} />
           <MiniStat label="Opening balance" value={formatCurrency(calc.openingBalance)} />
         </div>
-        <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-800">Customer, all bills, bill items, payments, advances and profile photo will be permanently deleted.</p>
+        <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs leading-5 text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">The customer and its linked records will be moved to Trash. Nothing is permanently deleted at this step.</p>
       </ConfirmDialog>
 
       <ConfirmDialog
@@ -3388,23 +3346,13 @@ function CustomerDetails({ currentShop, customerId }) {
         onOpenChange={(open) => { if (!open) { setDeleteOpen(false); setDeleteStage("summary"); setDeleteName("") } }}
         icon={Trash2}
         tone="rose"
-        title="Confirm permanent deletion"
-        description="This action cannot be undone. Confirm by typing the customer name exactly as shown."
-        confirmLabel="Delete permanently"
-        loadingLabel="Deleting…"
+        title="Move customer to Trash?"
+        description="The customer and linked records will be moved to Trash. You can restore them later or permanently delete them from the Trash page."
+        confirmLabel="Move to Trash"
+        loadingLabel="Moving…"
         loading={deleting}
-        confirmDisabled={deleteName.trim().toLocaleLowerCase() !== customer.name.trim().toLocaleLowerCase()}
         onConfirm={handleDeleteCustomer}
-      >
-        <div className="space-y-3 text-left">
-          <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-sm leading-6 text-rose-900">
-            To confirm, type <span className="mx-1 inline-block break-all rounded-md border border-rose-200 bg-white px-2 py-0.5 font-mono text-sm font-bold text-slate-900">{customer.name}</span> below.
-          </p>
-          <Input value={deleteName} onChange={(event) => setDeleteName(event.target.value)} placeholder="Type customer name" autoComplete="off" className="h-11 rounded-xl border-rose-200 bg-white focus-visible:ring-rose-500/20" />
-          <p className="text-[11px] text-slate-500">Delete button activates only when the name matches exactly.</p>
-          <Button type="button" variant="outline" className={`h-8 gap-2 px-2 text-xs ${outlineBtn}`} onClick={() => { setDeleteStage("summary"); setDeleteName("") }}>Back to account summary</Button>
-        </div>
-      </ConfirmDialog>
+      />
     </div>
   )
 }

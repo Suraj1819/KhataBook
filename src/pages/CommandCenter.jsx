@@ -9,6 +9,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
+import { moveToTrash } from "@/lib/trash"
 import { useShop } from "@/contexts/ShopContext"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -27,14 +28,20 @@ const RECENT_KEY = "khaatapro-command-center-recent"
 
 // ONE button style for the whole page (no green buttons anywhere)
 const BTN =
-  "inline-flex h-10 min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm transition-all hover:border-violet-300 hover:bg-violet-50 hover:text-violet-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-violet-500 dark:hover:bg-slate-800 dark:hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:pointer-events-none disabled:opacity-50"
+  "inline-flex h-10 min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-violet-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:border-violet-300 hover:bg-violet-50 hover:text-violet-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-violet-500 dark:hover:bg-slate-800 dark:hover:text-white"
+const ICON_BTN =
+  "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-violet-200 bg-white text-slate-600 shadow-sm transition-all hover:border-violet-300 hover:bg-violet-50 hover:text-violet-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-violet-500 dark:hover:bg-slate-800 dark:hover:text-white"
+const DANGER_BTN =
+  "border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300 hover:bg-rose-100 hover:text-rose-800 focus-visible:ring-rose-500 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:border-rose-700 dark:hover:bg-rose-900/50 dark:hover:text-rose-200"
+const DANGER_ICON_BTN =
+  "border-rose-200 bg-rose-50 text-rose-600 hover:border-rose-300 hover:bg-rose-100 hover:text-rose-700 focus-visible:ring-rose-500 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:border-rose-700 dark:hover:bg-rose-900/50 dark:hover:text-rose-200"
 
 const CARD =
-  "overflow-hidden rounded-[20px] border border-white/80 bg-white dark:bg-slate-900/85 dark:bg-slate-900/90 shadow-[0_5px_18px_rgba(80,65,130,0.07)] dark:border-slate-700/80 dark:bg-slate-900/90 backdrop-blur-sm"
+  "overflow-hidden rounded-[20px] border border-white/80 bg-white shadow-[0_5px_18px_rgba(80,65,130,0.07)] backdrop-blur-sm dark:border-slate-700/80 dark:bg-slate-900/90"
 const FIELD =
-  "h-10 w-full rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+  "h-10 w-full rounded-xl border border-violet-200 bg-white px-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
 const INPUT =
-  "h-11 w-full rounded-xl border border-violet-100 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm text-slate-800 dark:text-slate-100 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 transition placeholder:text-slate-400 focus:border-violet-400 focus:ring-2 focus:ring-violet-200"
+  "h-11 w-full rounded-xl border border-violet-100 bg-white px-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-violet-400 focus:ring-2 focus:ring-violet-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
 
 const TYPE_META = {
   customer: { label: "Customer", plural: "Customers", icon: Users, tone: "bg-emerald-100/80 text-emerald-700" },
@@ -694,7 +701,7 @@ function SummaryCard({ label, value, detail, icon: Icon, tone, active, onClick }
         active && "ring-2 ring-violet-500/70"
       )}
     >
-      <Card className="h-full overflow-hidden rounded-[20px] border border-white/80 bg-white dark:bg-slate-900/80 dark:bg-slate-900/90 shadow-[0_4px_15px_rgba(80,65,130,0.07)] backdrop-blur-sm transition hover:bg-white dark:bg-slate-900">
+      <Card className="h-full overflow-hidden rounded-[20px] border border-white/80 bg-white shadow-[0_4px_15px_rgba(80,65,130,0.07)] backdrop-blur-sm transition hover:bg-violet-50/40 dark:bg-slate-900/90 dark:hover:bg-slate-800">
         <div className="flex min-w-0 items-center gap-3 p-4">
           <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-full", tone)}>
             <Icon className="h-6 w-6" strokeWidth={1.9} aria-hidden="true" />
@@ -771,14 +778,14 @@ function AmountCell({ record }) {
   )
 }
 
-function RowAction({ label, icon: Icon, onClick }) {
+function RowAction({ label, icon: Icon, onClick, danger = false }) {
   return (
     <button
       type="button"
       title={label}
       aria-label={label}
       onClick={onClick}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 shadow-sm transition hover:border-violet-300 hover:bg-violet-50 hover:text-violet-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+      className={cn(ICON_BTN, danger && DANGER_ICON_BTN)}
     >
       <Icon className="h-4 w-4" aria-hidden="true" />
     </button>
@@ -907,7 +914,7 @@ function ModalHeader({ leading, eyebrow, title, meta, onClose, disabled }) {
         onClick={onClose}
         disabled={disabled}
         aria-label="Close dialog"
-        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-violet-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 shadow-sm transition hover:bg-violet-50 hover:text-violet-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:opacity-50"
+        className={ICON_BTN}
       >
         <X className="h-4 w-4" aria-hidden="true" />
       </button>
@@ -1359,8 +1366,8 @@ function RecordDialog({ record, records, shopId, onClose, onOpen, onEdit, onDele
           <AppButton onClick={() => onCopy(record.title)}><Copy className="h-4 w-4" aria-hidden="true" />Copy bill no.</AppButton>
         )}
         {canDelete && (
-          <AppButton onClick={onDelete} className="sm:ml-auto">
-            <Trash2 className="h-4 w-4 text-rose-600" aria-hidden="true" />Delete
+          <AppButton onClick={onDelete} className={cn(DANGER_BTN, "sm:ml-auto")}>
+            <Trash2 className="h-4 w-4" aria-hidden="true" />Move to Trash
           </AppButton>
         )}
       </div>
@@ -1465,7 +1472,7 @@ function EditCustomerDialog({ record, onClose, onSave }) {
                   <p className="text-xs text-slate-500 dark:text-slate-400">JPG, PNG or WebP, up to 2 MB.</p>
                   <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
                     <AppButton onClick={() => photoInput.current?.click()}><Camera className="h-4 w-4" aria-hidden="true" />{form.photo_preview ? "Change photo" : "Upload photo"}</AppButton>
-                    {form.photo_preview && <AppButton onClick={() => { update("photo_preview", ""); update("photo", null) }}><X className="h-4 w-4 text-rose-600" aria-hidden="true" />Remove</AppButton>}
+                    {form.photo_preview && <AppButton onClick={() => { update("photo_preview", ""); update("photo", null) }} className={DANGER_BTN}><X className="h-4 w-4" aria-hidden="true" />Remove photo</AppButton>}
                   </div>
                   <input ref={photoInput} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handlePhotoChange} />
                 </div>
@@ -1536,7 +1543,7 @@ function EditCustomerDialog({ record, onClose, onSave }) {
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">You have unsaved changes. If you close now, they will be lost.</p>
             <div className="mt-6 flex justify-end gap-2">
               <AppButton onClick={() => setDiscardOpen(false)}>Keep editing</AppButton>
-              <AppButton onClick={onClose}><Trash2 className="h-4 w-4 text-rose-600" aria-hidden="true" />Discard changes</AppButton>
+              <AppButton onClick={onClose} className={DANGER_BTN}><Trash2 className="h-4 w-4" aria-hidden="true" />Discard changes</AppButton>
             </div>
           </div>
         </Modal>
@@ -1553,10 +1560,7 @@ function DeleteDialog({ record, impact, onClose, onConfirm }) {
   const meta = TYPE_META[record.type]
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState("")
-  const [typed, setTyped] = useState("")
   const impactList = impact ? Object.entries(impact).filter(([, count]) => count > 0) : []
-  const risky = record.type === "customer" && impactList.length > 0
-  const confirmed = !risky || typed.trim().toUpperCase() === "DELETE"
 
   const run = async () => {
     setDeleting(true)
@@ -1564,23 +1568,23 @@ function DeleteDialog({ record, impact, onClose, onConfirm }) {
     try {
       await onConfirm()
     } catch (err) {
-      setError(err?.message || "Could not delete. Please try again.")
+      setError(err?.message || "Could not move this record to Trash. Please try again.")
       setDeleting(false)
     }
   }
 
   return (
-    <Modal label={`Delete ${meta.label.toLowerCase()}`} onClose={onClose} locked={deleting} layer={120} size="max-w-md">
-      <div className="bg-white dark:bg-slate-900 p-6">
-        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-600"><Trash2 className="h-5 w-5" aria-hidden="true" /></span>
-        <h2 className="mt-4 text-lg font-bold tracking-tight text-[#171a36] dark:text-slate-100">Delete {meta.label.toLowerCase()}?</h2>
+    <Modal label={`Move ${meta.label.toLowerCase()} to Trash`} onClose={onClose} locked={deleting} layer={120} size="max-w-md">
+      <div className="bg-white p-6 dark:bg-slate-900">
+        <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-300"><Trash2 className="h-5 w-5" aria-hidden="true" /></span>
+        <h2 className="mt-4 text-lg font-bold tracking-tight text-[#171a36] dark:text-slate-100">Move {meta.label.toLowerCase()} to Trash?</h2>
         <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-          <strong className="text-[#171a36] dark:text-slate-100">{record.title}</strong> will be deleted permanently. This can’t be undone.
+          <strong className="text-[#171a36] dark:text-slate-100">{record.title}</strong> will be moved to Trash. You can restore it later or permanently delete it from the Trash page.
         </p>
 
         {impactList.length > 0 && (
           <div className="mt-4 rounded-2xl border border-rose-100 bg-rose-50/60 p-3.5">
-            <p className="text-xs font-semibold text-rose-700">These linked records will also be removed</p>
+            <p className="text-xs font-semibold text-rose-800 dark:text-rose-300">Related records affected by this move</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {impactList.map(([key, count]) => (
                 <span key={key} className="rounded-full bg-white dark:bg-slate-900 px-2.5 py-1 text-xs font-bold text-rose-700 shadow-sm">{count} {key}</span>
@@ -1589,20 +1593,13 @@ function DeleteDialog({ record, impact, onClose, onConfirm }) {
           </div>
         )}
 
-        {risky && (
-          <label className="mt-4 block">
-            <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Type DELETE to confirm</span>
-            <input value={typed} onChange={(event) => setTyped(event.target.value)} autoFocus className={FIELD} />
-          </label>
-        )}
-
         {error && <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
 
         <div className="mt-6 flex justify-end gap-2">
           <AppButton onClick={onClose} disabled={deleting}>Cancel</AppButton>
-          <AppButton onClick={run} disabled={deleting || !confirmed}>
-            {deleting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Trash2 className="h-4 w-4 text-rose-600" aria-hidden="true" />}
-            Delete permanently
+          <AppButton onClick={run} disabled={deleting} className={DANGER_BTN}>
+            {deleting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Trash2 className="h-4 w-4" aria-hidden="true" />}
+            Move to Trash
           </AppButton>
         </div>
       </div>
@@ -1931,38 +1928,31 @@ export default function CommandCenter() {
     await loadRecords(true)
   }
 
-  /* ---------- DELETE (same order as the Bills and Customers pages) ---------- */
+  /* ---------- MOVE TO CENTRAL TRASH ---------- */
 
   const deleteRecord = async () => {
     const target = deleteTarget
     if (!target || !shopId) return
-    const check = (error) => { if (error) throw error }
 
-    if (target.type === "customer") {
-      const { data: billRows, error: lookupError } = await supabase.from("bills").select("id").eq("shop_id", shopId).eq("customer_id", target.id)
-      check(lookupError)
-      const billIds = (billRows || []).map((row) => row.id)
-      check((await supabase.from("payments").delete().eq("shop_id", shopId).eq("customer_id", target.id)).error)
-      if (billIds.length) {
-        check((await supabase.from("bill_items").delete().in("bill_id", billIds)).error)
-        check((await supabase.from("bills").delete().eq("shop_id", shopId).eq("customer_id", target.id)).error)
-      }
-      check((await supabase.from("customer_advances").delete().eq("shop_id", shopId).eq("customer_id", target.id)).error)
-      check((await supabase.from("customers").delete().eq("id", target.id).eq("shop_id", shopId)).error)
-    } else if (target.type === "invoice") {
-      const { data: bill, error: lookupError } = await supabase.from("bills").select("id").eq("id", target.id).eq("shop_id", shopId).maybeSingle()
-      check(lookupError)
-      if (!bill) throw new Error("Invoice not found in this shop.")
-      check((await supabase.from("payments").delete().eq("bill_id", bill.id).eq("shop_id", shopId)).error)
-      check((await supabase.from("bill_items").delete().eq("bill_id", bill.id)).error)
-      check((await supabase.from("bills").delete().eq("id", bill.id).eq("shop_id", shopId)).error)
-    } else if (target.type === "khata") {
-      check((await supabase.from("khata_entries").delete().eq("id", target.id).eq("shop_id", shopId)).error)
-    } else {
-      throw new Error("This record type is protected. Open it to manage it.")
+    // Command Center uses "invoice" in its searchable model; Trash stores it as "bill".
+    const trashType =
+      target.type === "invoice" ? "bill" :
+      target.type === "customer" ? "customer" :
+      target.type === "khata" ? "khata_entry" : null
+
+    if (!trashType) {
+      throw new Error("This record type cannot be moved to Trash from here.")
     }
 
-    toast.success(`${TYPE_META[target.type].label} deleted`)
+    await moveToTrash({
+      shopId,
+      type: trashType,
+      id: target.id,
+    })
+
+    toast.success(`${TYPE_META[target.type].label} moved to Trash`, {
+      description: "You can restore it or permanently delete it from the Trash page.",
+    })
     setDeleteTarget(null)
     setPreview(null)
     await loadRecords(true)
@@ -1975,12 +1965,15 @@ export default function CommandCenter() {
         invoices: deleteTarget.stat?.bills || 0,
         payments: records.filter((row) => row.type === "payment" && String(row.data.customer_id) === String(deleteTarget.id)).length,
         advances: records.filter((row) => row.type === "advance" && String(row.data.customer_id) === String(deleteTarget.id)).length,
+        "khata entries": records.filter((row) => row.type === "khata" && String(row.data.customer_id) === String(deleteTarget.id)).length,
+        attachments: records.filter((row) => row.type === "attachment" && String(row.data.customer_id) === String(deleteTarget.id)).length,
       }
     }
     if (deleteTarget.type === "invoice") {
       return {
         items: deleteTarget.itemCount || 0,
         payments: records.filter((row) => row.type === "payment" && String(row.data.bill_id) === String(deleteTarget.id)).length,
+        attachments: records.filter((row) => row.type === "attachment" && String(row.data.bill_id) === String(deleteTarget.id)).length,
       }
     }
     return null
@@ -2072,7 +2065,7 @@ export default function CommandCenter() {
               />
               <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
                 {query && (
-                  <button type="button" onClick={() => { setQuery(""); inputRef.current?.focus() }} aria-label="Clear search" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
+                  <button type="button" onClick={() => { setQuery(""); inputRef.current?.focus() }} aria-label="Clear search" className={cn(ICON_BTN, "h-8 w-8 rounded-lg border-transparent bg-transparent shadow-none hover:border-violet-200 hover:bg-violet-50 dark:hover:border-slate-700 dark:hover:bg-slate-800")}>
                     <X className="h-4 w-4" aria-hidden="true" />
                   </button>
                 )}
@@ -2165,7 +2158,7 @@ export default function CommandCenter() {
                 {activeChips.map((chip) => (
                   <span key={chip.label} className="inline-flex items-center gap-1 rounded-full bg-violet-50 py-1 pl-3 pr-1.5 text-xs font-semibold text-violet-800">
                     {chip.label}
-                    <button type="button" onClick={chip.clear} aria-label={`Remove filter ${chip.label}`} className="rounded-full p-0.5 hover:bg-violet-100"><X className="h-3 w-3" aria-hidden="true" /></button>
+                    <button type="button" onClick={chip.clear} aria-label={`Remove filter ${chip.label}`} className={cn(ICON_BTN, "h-6 w-6 rounded-full border-transparent bg-transparent p-0 shadow-none hover:border-violet-200 hover:bg-violet-100 dark:hover:border-slate-700 dark:hover:bg-slate-800")}><X className="h-3 w-3" aria-hidden="true" /></button>
                   </span>
                 ))}
                 <button type="button" onClick={resetFilters} className="text-xs font-semibold text-violet-700 hover:text-violet-900">Reset all</button>
@@ -2249,7 +2242,7 @@ export default function CommandCenter() {
                             <RowAction label="View details" icon={Eye} onClick={() => setPreview(record)} />
                             <RowAction label="Open page" icon={ExternalLink} onClick={() => openRecord(record)} />
                             {["customer", "invoice", "khata"].includes(record.type) && (
-                              <RowAction label={`Delete ${TYPE_META[record.type].label}`} icon={Trash2} onClick={() => setDeleteTarget(record)} />
+                              <RowAction label={`Delete ${TYPE_META[record.type].label}`} icon={Trash2} danger onClick={() => setDeleteTarget(record)} />
                             )}
                           </div>
                         </td>
@@ -2284,7 +2277,7 @@ export default function CommandCenter() {
                       <AppButton onClick={() => setPreview(record)}><Eye className="h-4 w-4" aria-hidden="true" />View</AppButton>
                       <AppButton onClick={() => openRecord(record)}><ExternalLink className="h-4 w-4" aria-hidden="true" />Open</AppButton>
                       {["customer", "invoice", "khata"].includes(record.type) && (
-                        <AppButton onClick={() => setDeleteTarget(record)}><Trash2 className="h-4 w-4 text-rose-600" aria-hidden="true" />Delete</AppButton>
+                        <AppButton onClick={() => setDeleteTarget(record)} className={DANGER_BTN}><Trash2 className="h-4 w-4" aria-hidden="true" />Move to Trash</AppButton>
                       )}
                     </div>
                   </article>

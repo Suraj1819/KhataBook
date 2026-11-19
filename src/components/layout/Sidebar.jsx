@@ -6,7 +6,7 @@ import {
   AlertCircle, CreditCard, Settings, Store, UserCircle,
   X, ChevronDown, TrendingUp, LogOut, Check, Plus,
   ChevronsLeft, ChevronsRight, Sun, Moon, Loader2,
-  MapPin, ScanLine, Command,
+  MapPin, ScanLine, Command, Trash2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useShop } from "@/contexts/ShopContext"
@@ -51,6 +51,7 @@ const navGroups = [
     items: [
       { to: "/customers", icon: Users, label: "Customers" },
       { to: "/khata", icon: BookOpen, label: "Personal Khata" },
+      { to: "/trash", icon: Trash2, label: "Trash" },
     ],
   },
   {

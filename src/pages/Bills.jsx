@@ -4,6 +4,7 @@ import { useShop } from "@/contexts/ShopContext"
 import { supabase } from "@/lib/supabase"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { generateBillsStatementPDF } from "@/lib/billsPdf"
+import { moveToTrash } from "@/lib/trash"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -309,51 +310,6 @@ function StatusBadge({ status }) {
   )
 }
 
-// Convert a Supabase Storage URL or stored object path into a bucket-relative path.
-function safeDecodePath(value) {
-  try {
-    return decodeURIComponent(value)
-  } catch {
-    return value
-  }
-}
-
-function getBillAttachmentPath(value) {
-  if (!value) return null
-
-  const raw = String(value).trim()
-  if (!raw) return null
-
-  try {
-    const parsed = new URL(raw)
-    const marker = "/storage/v1/object/"
-    const markerIndex = parsed.pathname.indexOf(marker)
-
-    if (markerIndex >= 0) {
-      const storagePart = parsed.pathname.slice(markerIndex + marker.length)
-      const prefixes = [
-        "public/bill_attachments/",
-        "sign/bill_attachments/",
-        "authenticated/bill_attachments/",
-      ]
-
-      const prefix = prefixes.find((item) => storagePart.startsWith(item))
-
-      if (prefix) {
-        return safeDecodePath(storagePart.slice(prefix.length))
-      }
-    }
-  } catch {
-    // The value may already be a bucket-relative object path.
-  }
-
-  const relativePath = raw
-    .replace(/^\/+/, "")
-    .replace(/^bill_attachments\//, "")
-
-  return safeDecodePath(relativePath)
-}
-
 /* ==================================================
    BILLS PAGE
 ================================================== */
@@ -543,59 +499,21 @@ function Bills() {
 
     setDeleting(true)
     try {
-      const { data: billRecord, error: fetchError } = await supabase
-        .from("bills")
-        .select("id, shop_id, attachment_url")
-        .eq("id", deleteTarget.id)
-        .eq("shop_id", shopId)
-        .single()
+      await moveToTrash({
+        shopId,
+        type: "bill",
+        id: deleteTarget.id,
+      })
 
-      if (fetchError) throw fetchError
-      if (!billRecord) throw new Error("Bill not found in this workspace.")
-
-      const { error: paymentsError } = await supabase
-        .from("payments")
-        .delete()
-        .eq("bill_id", billRecord.id)
-        .eq("shop_id", shopId)
-      if (paymentsError) throw paymentsError
-
-      const { error: itemsError } = await supabase
-        .from("bill_items")
-        .delete()
-        .eq("bill_id", billRecord.id)
-      if (itemsError) throw itemsError
-
-      const { error: billError } = await supabase
-        .from("bills")
-        .delete()
-        .eq("id", billRecord.id)
-        .eq("shop_id", shopId)
-      if (billError) throw billError
-
-      const attachmentPath = getBillAttachmentPath(billRecord.attachment_url)
-      let storageWarning = ""
-      if (attachmentPath) {
-        const { error: storageError } = await supabase.storage
-          .from("bill_attachments")
-          .remove([attachmentPath])
-        if (storageError) {
-          console.error("Bill attachment storage deletion failed:", storageError)
-          storageWarning = " The bill was deleted, but its attachment could not be removed from Storage."
-        }
-      }
-
-      setBills((current) => current.filter((bill) => bill.id !== billRecord.id))
+      setBills((current) => current.filter((bill) => bill.id !== deleteTarget.id))
       setDeleteTarget(null)
-      toast.success(
-        storageWarning
-          ? "Bill deleted." + storageWarning
-          : "Bill and its attachment deleted successfully."
-      )
+      toast.success("Bill moved to Trash", {
+        description: "You can restore it or permanently delete it from the Trash page.",
+      })
       await loadBills(true)
     } catch (error) {
-      console.error("Delete bill error:", error)
-      toast.error("Could not delete bill", {
+      console.error("Move bill to Trash error:", error)
+      toast.error("Could not move bill to Trash", {
         description: error?.message || "Please try again.",
       })
     } finally {
@@ -743,7 +661,78 @@ function Bills() {
   -------------------------------------------------- */
 
   return (
-    <div className="min-h-full w-full space-y-4 rounded-2xl bg-[#f7f5ff] px-3 py-5 sm:px-5 lg:px-6">
+    <div className="bills-page min-h-full w-full space-y-4 rounded-2xl bg-[#f7f5ff] px-3 py-5 sm:px-5 lg:px-6">
+      <style>{`
+        .bills-page button,
+        .bills-page [role="button"],
+        .bills-page a[role="button"] {
+          border-color: #ddd6fe !important;
+          border-radius: 0.75rem !important;
+          background: rgba(255, 255, 255, 0.94) !important;
+          color: #334155 !important;
+          box-shadow: 0 1px 3px rgba(80, 65, 130, 0.08) !important;
+          transition: background-color 160ms ease, border-color 160ms ease,
+            box-shadow 160ms ease, transform 160ms ease !important;
+        }
+        .bills-page button:hover:not(:disabled),
+        .bills-page [role="button"]:hover,
+        .bills-page a[role="button"]:hover {
+          border-color: #c4b5fd !important;
+          background: #f5f3ff !important;
+          box-shadow: 0 3px 9px rgba(80, 65, 130, 0.10) !important;
+        }
+        .bills-page button:focus-visible,
+        .bills-page [role="button"]:focus-visible,
+        .bills-page a[role="button"]:focus-visible {
+          outline: none !important;
+          box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.28) !important;
+        }
+        .bills-page button:disabled {
+          cursor: not-allowed !important;
+          opacity: 0.5 !important;
+          box-shadow: none !important;
+        }
+        .dark .bills-page button,
+        .dark .bills-page [role="button"],
+        .dark .bills-page a[role="button"] {
+          border-color: rgba(139, 123, 190, 0.42) !important;
+          background: rgba(35, 31, 52, 0.92) !important;
+          color: #e5e1f2 !important;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22) !important;
+        }
+        .dark .bills-page button:hover:not(:disabled),
+        .dark .bills-page [role="button"]:hover,
+        .dark .bills-page a[role="button"]:hover {
+          border-color: rgba(167, 139, 250, 0.62) !important;
+          background: rgba(54, 46, 78, 0.96) !important;
+        }
+        /* Destructive actions deliberately override the shared neutral button skin. */
+        .bills-page button.btn-destructive {
+          border-color: #fecaca !important;
+          background: #fff1f2 !important;
+          color: #be123c !important;
+          box-shadow: 0 1px 3px rgba(190, 18, 60, 0.10) !important;
+        }
+        .bills-page button.btn-destructive:hover:not(:disabled) {
+          border-color: #fda4af !important;
+          background: #ffe4e6 !important;
+          color: #9f1239 !important;
+        }
+        .bills-page button.btn-destructive:focus-visible {
+          box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.22) !important;
+        }
+        .dark .bills-page button.btn-destructive {
+          border-color: rgba(251, 113, 133, 0.48) !important;
+          background: rgba(136, 19, 55, 0.22) !important;
+          color: #fda4af !important;
+        }
+        .dark .bills-page button.btn-destructive:hover:not(:disabled) {
+          border-color: rgba(251, 113, 133, 0.72) !important;
+          background: rgba(159, 18, 57, 0.34) !important;
+          color: #fecdd3 !important;
+        }
+      `}</style>
+      
       {/* PAGE HEADER */}
 
       <header className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
@@ -1251,9 +1240,9 @@ function Bills() {
                             <button
                               type="button"
                               onClick={() => setDeleteTarget(bill)}
-                              aria-label={`Delete bill ${bill.bill_number || ""}`}
-                              title="Delete bill"
-                              className="flex h-8 w-8 items-center justify-center rounded-xl border border-rose-200 bg-white text-rose-600 shadow-sm transition-colors hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/40"
+                              aria-label={`Move bill ${bill.bill_number || ""} to Trash`}
+                              title="Move to Trash"
+                              className="btn-destructive flex h-8 w-8 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-700 shadow-sm transition-all hover:border-rose-300 hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/40"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -1376,9 +1365,9 @@ function Bills() {
                       <button
                         type="button"
                         onClick={() => setDeleteTarget(bill)}
-                        className="flex h-9 w-11 shrink-0 items-center justify-center rounded-xl border border-rose-200 bg-white text-rose-600 transition-colors hover:bg-rose-50"
-                        aria-label={`Delete bill ${bill.bill_number || ""}`}
-                        title="Delete bill"
+                        className="btn-destructive flex h-9 w-11 shrink-0 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-700 transition-all hover:border-rose-300 hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/40"
+                        aria-label={`Move bill ${bill.bill_number || ""} to Trash`}
+                        title="Move to Trash"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -1432,13 +1421,13 @@ function Bills() {
                       <Button
                         key={item}
                         type="button"
-                        variant={safePage === item ? "default" : "outline"}
+                        variant="outline"
                         aria-label={`Page ${item}`}
                         aria-current={safePage === item ? "page" : undefined}
                         onClick={() => setPage(item)}
                         className={`h-8 min-w-8 rounded-full border px-0 text-xs font-semibold shadow-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:cursor-not-allowed disabled:opacity-50 ${
                           safePage === item
-                            ? "border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800"
+                            ? "border-violet-300 bg-violet-100 text-slate-900 hover:bg-violet-100"
                             : "border-violet-200 bg-white/90 text-slate-700 hover:border-violet-300 hover:bg-violet-50"
                         }`} >
                         {item}
@@ -1484,9 +1473,9 @@ function Bills() {
                 <AlertTriangle className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <h2 id="delete-bill-title" className="text-base font-bold text-slate-900">Delete this bill?</h2>
+                <h2 id="delete-bill-title" className="text-base font-bold text-slate-900">Move this bill to Trash?</h2>
                 <p id="delete-bill-description" className="mt-1 text-sm leading-5 text-slate-600">
-                  Bill <strong>{deleteTarget.bill_number || "without a bill number"}</strong> will be permanently deleted, along with its items, linked payment records and offline attachment from the bill_attachments storage bucket. This action cannot be undone.
+                  Bill <strong>{deleteTarget.bill_number || "without a bill number"}</strong> and its linked records will be moved to Trash. You can restore them later or permanently delete them from the Trash page.
                 </p>
               </div>
             </div>
@@ -1503,10 +1492,10 @@ function Bills() {
                 type="button"
                 disabled={deleting}
                 onClick={handleDeleteBill}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 text-sm font-semibold text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn-destructive inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 text-sm font-semibold text-rose-700 shadow-sm transition-all hover:border-rose-300 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Trash2 className="h-4 w-4" />
-                {deleting ? "Deleting…" : "Delete bill"}
+                {deleting ? "Moving…" : "Move to Trash"}
               </button>
             </div>
           </section>
